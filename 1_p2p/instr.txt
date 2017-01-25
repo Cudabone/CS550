@@ -1,0 +1,5 @@
+Compile:
+rpcgen -a -C p2p.x
+./build.sh
+launchctl start rpcbind
+*launch server then client*
