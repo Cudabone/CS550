@@ -7,6 +7,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <rpc/rpc.h>
 
 /*TODO:
  * Figure out why I need a new string to receive valid data

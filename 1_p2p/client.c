@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 
+int prompt(void);
 int main(int argc, char **argv)
 {
 	struct sockaddr_un sa;
@@ -34,7 +35,30 @@ int main(int argc, char **argv)
 	printf("From server: %s\n",s1);
 	strcpy(s1,"Cl");	
 	send(sfd,(const void *)s2,2,0);
+
+	int cmd;
+	do{
+		cmd = prompt();
+	}while(cmd < 0);
 	unlink(sa.sun_path);
 	close(sfd);
 	free(s1);
+}
+int prompt(void)
+{
+	printf("Enter the number for the desired command\n");
+	printf("1: Register a file to the server\n");
+	printf("2: Look up / Retreive a file\n");
+	printf("3: Exit\n");
+	int input;
+	//Scan input
+	scanf("%d",&input);
+	//Consume end of line character
+	getchar();
+	if(input > 3 || input < 1 || input == 0)
+	{
+		printf("Invalid input, try again\n");
+		return -1;
+	}
+	return input;
 }
