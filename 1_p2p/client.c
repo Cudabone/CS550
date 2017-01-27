@@ -37,12 +37,15 @@ int main(int argc, char **argv)
 	err = connect(sfd,(const struct sockaddr *)&sa,sizeof(sa));
 	if(err < 0)
 		perror("Connect");
+	/*
 	char *s1 = malloc(2*sizeof(char));
 	char *s2 = "Cl";
 	recv(sfd,(void *)s1,2,0);
 	printf("From server: %s\n",s1);
 	strcpy(s1,"Cl");	
 	send(sfd,(const void *)s2,2,0);
+	free(s1);
+	*/
 
 	int cmd;
 	do{
@@ -56,6 +59,7 @@ int main(int argc, char **argv)
 				send(sfd,"1",2,0);
 				//Send Server filename
 				send(sfd,(void *)filename,MAXLINE,0);
+				break;
 			case 2: 
 				read_filename(filename);
 				//Send Server command #
@@ -78,7 +82,6 @@ int main(int argc, char **argv)
 	}while(cmd != 3);
 	unlink(sa.sun_path);
 	close(sfd);
-	free(s1);
 }
 int prompt(void)
 {
@@ -105,10 +108,18 @@ int prompt(void)
 }
 void read_filename(char *filename)
 {
-	printf("Enter the filename to register\n");
-	fgets(filename,MAXLINE,stdin);
-	char *buf;
-	if((buf=strchr(filename,'\n')) != NULL)
-		*buf = '\0';
-	printf("\"%s\"\n",filename);
+	FILE *file;
+	do{
+		printf("Enter the filename to register\n");
+		fgets(filename,MAXLINE,stdin);
+		char *buf;
+		if((buf=strchr(filename,'\n')) != NULL)
+			*buf = '\0';
+		file = fopen((const char *)filename,"r");
+		if(file == NULL)
+		{
+			printf("File does not exist!\n");
+		}
+	}while(file == NULL);
+	//printf("\"%s\"\n",filename);
 }

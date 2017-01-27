@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <rpc/rpc.h>
+#include "const.h"
 
 /*TODO:
  * Figure out why I need a new string to receive valid data
@@ -25,6 +26,7 @@ int lookup(const char *filename);
 int registry(const int peerid, const char *filename);
 int remove_entry(const int peerid, const char *filename);
 void free_list(void);
+void print_registry();
 
 int main(int argc, char **argv)
 {
@@ -66,15 +68,32 @@ int main(int argc, char **argv)
 	printf("Server waiting for connection\n");
 	cfd = accept(sfd,(struct sockaddr*)&ca,&len);
 	printf("Connected\n");
+
+	char cmdstr[2];
+	char filename[MAXLINE];
+	//Receive command #
+	//1 = Register, 2 = lookup
+	recv(cfd,(void *)cmdstr,2,0);
+	int cmd = atoi(cmdstr);
+	if(cmd == 1)
+	{
+		recv(cfd,(void *)filename,MAXLINE,0);
+		printf("Calling Registry with filename: \"%s\"\n",filename);
+		registry(1,filename);
+	}
+	printf("Done\n");
+	/*
 	char *s1 = "Sv";
 	char *s2 = malloc(2*sizeof(char));
 	send(cfd,(const void *)s1,2,0);
 	recv(cfd,(void *)s2,2,0);
 	printf("From client: %s\n",s2);
+	free(s2);
+	*/
+	print_registry();
 	unlink(sa.sun_path);
 	close(sfd);
 	free_list();
-	free(s2);
 	return 0;
 }
 /* 0 on success, -1 on failure: list full */
@@ -83,7 +102,7 @@ int registry(const int peerid, const char *filename)
 	int i;
 	for(i = 0; i < MAXFILES; i++)
 	{
-		if(files[i] != NULL)
+		if(files[i] == NULL)
 		{
 			files[i] = malloc(sizeof(pfile));
 			files[i]->peerid = peerid;
@@ -130,6 +149,17 @@ void free_list(void)
 		{
 			free(files[i]->filename);
 			free(files[i]);
+		}
+	}
+}
+void print_registry()
+{
+	int i;
+	for(i = 0; i < MAXFILES; i++)
+	{
+		if(files[i] != NULL)
+		{
+			printf("File %d : %s | Client : %d\n",i,files[i]->filename,files[i]->peerid);
 		}
 	}
 }
