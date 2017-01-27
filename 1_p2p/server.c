@@ -17,14 +17,14 @@
 #define MAXFILES 64
 typedef struct
 {
-	int peerid;
+	char peerid[HOSTNAMELENGTH];
 	char *filename;
 } pfile;
 
 pfile *files[MAXFILES] = {NULL}; 
-int lookup(const char *filename);
-int registry(const int peerid, const char *filename);
-int remove_entry(const int peerid, const char *filename);
+char *lookup(const char *filename);
+int registry(const char *peerid, const char *filename);
+int remove_entry(const char *peerid, const char *filename);
 void free_list(void);
 void print_registry();
 
@@ -69,8 +69,11 @@ int main(int argc, char **argv)
 	cfd = accept(sfd,(struct sockaddr*)&ca,&len);
 	printf("Connected\n");
 
+	while(1)
+	{
 	char cmdstr[2];
 	char filename[MAXLINE];
+	char peerid[HOSTNAMELENGTH];
 	//Receive command #
 	//1 = Register, 2 = lookup
 	recv(cfd,(void *)cmdstr,2,0);
@@ -78,8 +81,29 @@ int main(int argc, char **argv)
 	if(cmd == 1)
 	{
 		recv(cfd,(void *)filename,MAXLINE,0);
+		recv(cfd,(void *)peerid,HOSTNAMELENGTH,0);
 		printf("Calling Registry with filename: \"%s\"\n",filename);
-		registry(1,filename);
+		registry(peerid,filename);
+	}
+	else if(cmd == 2)
+	{
+		recv(cfd,(void *)filename,MAXLINE,0);
+		printf("Calling Registry with filename: \"%s\"\n",filename);
+		char *temp = lookup(filename);
+		if(temp != NULL)
+		{
+			//Tell client we found file (Next message file name)
+			send(cfd,"1",2,0);
+			send(cfd,(void *)temp,HOSTNAMELENGTH,0);
+			printf("Server found host %s has file\n",temp);
+		}
+		else
+		{
+			//Tell client we did not find file
+			send(cfd,"0",2,0);
+			printf("Server did not find file\n");
+		}
+	}
 	}
 	printf("Done\n");
 	/*
@@ -97,7 +121,7 @@ int main(int argc, char **argv)
 	return 0;
 }
 /* 0 on success, -1 on failure: list full */
-int registry(const int peerid, const char *filename)
+int registry(const char *peerid, const char *filename)
 {
 	int i;
 	for(i = 0; i < MAXFILES; i++)
@@ -105,21 +129,22 @@ int registry(const int peerid, const char *filename)
 		if(files[i] == NULL)
 		{
 			files[i] = malloc(sizeof(pfile));
-			files[i]->peerid = peerid;
+			strcpy(files[i]->peerid,peerid);
 			files[i]->filename = malloc(sizeof(*filename)); 
 			strcpy(files[i]->filename,filename);
 			return 0;
 		}
 	}
+	printf("Server registry full\n");
 	return -1;
 }
 /* 0 on success, -1 on failure: entry not in list */
-int remove_entry(const int peerid, const char *filename)
+int remove_entry(const char *peerid, const char *filename)
 {
 	int i;
 	for(i = 0; i < MAXFILES; i++)
 	{
-		if(files[i]!= NULL && files[i]->peerid == peerid && strcmp(files[i]->filename,filename) == 0)
+		if(files[i]!= NULL && strcmp(files[i]->peerid,peerid) == 0 && strcmp(files[i]->filename,filename) == 0)
 		{
 			free(files[i]->filename);
 			free(files[i]);
@@ -130,7 +155,7 @@ int remove_entry(const int peerid, const char *filename)
 	return -1;
 }
 /* peerid on success, -1 on failure: file not in list*/
-int lookup(const char *filename)
+char *lookup(const char *filename)
 {
 	int i;
 	for(i = 0; i < MAXFILES; i++)
@@ -138,7 +163,7 @@ int lookup(const char *filename)
 		if(files[i] != NULL && strcmp(files[i]->filename,filename) == 0)
 			return files[i]->peerid;
 	}
-	return -1;
+	return NULL;
 }
 void free_list(void)
 {
@@ -159,7 +184,7 @@ void print_registry()
 	{
 		if(files[i] != NULL)
 		{
-			printf("File %d : %s | Client : %d\n",i,files[i]->filename,files[i]->peerid);
+			printf("File %d : %s | Client : %s\n",i,files[i]->filename,files[i]->peerid);
 		}
 	}
 }

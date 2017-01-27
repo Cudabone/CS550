@@ -7,8 +7,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include "const.h"
 
-#define MAXLINE 1024
 int prompt(void);
 void read_filename(char *filename);
 
@@ -21,8 +21,21 @@ int main(int argc, char **argv)
 {
 	struct sockaddr_un sa;
 	int sfd;
+	char hostname[HOSTNAMELENGTH];
 	//Socket over IPv4
 	//sockfd = socket(AF_INET,SOCK_SEQPACKET,0);	
+	if(argc != 2)
+	{
+		printf("Usage: ./client clientid\n");
+		return 1;
+	}
+	if(strlen(argv[1])+1 >= HOSTNAMELENGTH)
+	{
+		printf("Host name too large\n");
+		return 1;
+	}
+	strcpy(hostname,argv[1]);
+	printf("Hostname: %s\n",hostname);
 	
 	//Socket over localhost
 	sfd = socket(AF_UNIX,SOCK_STREAM,0);
@@ -51,7 +64,9 @@ int main(int argc, char **argv)
 	do{
 		cmd = prompt();
 		char filename[MAXLINE];	
-		char peer_num[2];
+		char peerid[HOSTNAMELENGTH];
+		char found[2];
+		int found_int;
 		switch(cmd){
 			case 1: 
 				read_filename(filename);
@@ -59,21 +74,24 @@ int main(int argc, char **argv)
 				send(sfd,"1",2,0);
 				//Send Server filename
 				send(sfd,(void *)filename,MAXLINE,0);
+				send(sfd,hostname,HOSTNAMELENGTH,0);
 				break;
 			case 2: 
 				read_filename(filename);
 				//Send Server command #
 				send(sfd,"2",2,0);
 				send(sfd,(void *)filename,MAXLINE,0);
-				recv(sfd,(void *)peer_num,2,0);
-			 	if(peer_num < 0)	
+				recv(sfd,(void *)found,2,0);
+				found_int = atoi(found);
+			 	if(found_int)	
 				{
-					printf("File does not exist on server\n");
-					break;
+					//send/recv from other client
+					recv(sfd,(void *)peerid,HOSTNAMELENGTH,0);
+					printf("Received peerid: %s\n",peerid);
 				}
 				else
 				{
-					//send/recv from other client
+					printf("File does not exist on server\n");
 				}
 				break;
 			case 3: 
