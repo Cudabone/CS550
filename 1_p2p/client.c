@@ -8,7 +8,15 @@
 #include <unistd.h>
 #include <stdlib.h>
 
+#define MAXLINE 1024
 int prompt(void);
+void read_filename(char *filename);
+
+/* NOTES
+ * Threads: 1 thread for user
+ * 			2 threads (one per other client)
+ * 			1 thread to check files
+ */
 int main(int argc, char **argv)
 {
 	struct sockaddr_un sa;
@@ -39,26 +47,68 @@ int main(int argc, char **argv)
 	int cmd;
 	do{
 		cmd = prompt();
-	}while(cmd < 0);
+		char filename[MAXLINE];	
+		char peer_num[2];
+		switch(cmd){
+			case 1: 
+				read_filename(filename);
+				//Send Server command #
+				send(sfd,"1",2,0);
+				//Send Server filename
+				send(sfd,(void *)filename,MAXLINE,0);
+			case 2: 
+				read_filename(filename);
+				//Send Server command #
+				send(sfd,"2",2,0);
+				send(sfd,(void *)filename,MAXLINE,0);
+				recv(sfd,(void *)peer_num,2,0);
+			 	if(peer_num < 0)	
+				{
+					printf("File does not exist on server\n");
+					break;
+				}
+				else
+				{
+					//send/recv from other client
+				}
+				break;
+			case 3: 
+				break;
+		}
+	}while(cmd != 3);
 	unlink(sa.sun_path);
 	close(sfd);
 	free(s1);
 }
 int prompt(void)
 {
-	printf("Enter the number for the desired command\n");
-	printf("1: Register a file to the server\n");
-	printf("2: Look up / Retreive a file\n");
-	printf("3: Exit\n");
 	int input;
 	//Scan input
-	scanf("%d",&input);
-	//Consume end of line character
-	getchar();
-	if(input > 3 || input < 1 || input == 0)
-	{
-		printf("Invalid input, try again\n");
-		return -1;
-	}
+	//scanf("%d",&input);
+	char str[MAXLINE];
+	int valid = 1;
+	do{
+		printf("Enter the number for the desired command\n");
+		printf("1: Register a file to the server\n");
+		printf("2: Look up / Retreive a file\n");
+		printf("3: Exit\n");
+		fgets(str,MAXLINE,stdin);
+		//Consume end of line character
+		input = atoi(str);
+		if(input > 3 || input < 1 || input == 0)
+		{
+			valid = 0;
+			printf("Invalid input, try again\n");
+		}
+	}while(!valid);
 	return input;
+}
+void read_filename(char *filename)
+{
+	printf("Enter the filename to register\n");
+	fgets(filename,MAXLINE,stdin);
+	char *buf;
+	if((buf=strchr(filename,'\n')) != NULL)
+		*buf = '\0';
+	printf("\"%s\"\n",filename);
 }
