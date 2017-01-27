@@ -71,49 +71,41 @@ int main(int argc, char **argv)
 
 	while(1)
 	{
-	char cmdstr[2];
-	char filename[MAXLINE];
-	char peerid[HOSTNAMELENGTH];
-	//Receive command #
-	//1 = Register, 2 = lookup
-	recv(cfd,(void *)cmdstr,2,0);
-	int cmd = atoi(cmdstr);
-	if(cmd == 1)
-	{
-		recv(cfd,(void *)filename,MAXLINE,0);
-		recv(cfd,(void *)peerid,HOSTNAMELENGTH,0);
-		printf("Calling Registry with filename: \"%s\"\n",filename);
-		registry(peerid,filename);
-	}
-	else if(cmd == 2)
-	{
-		recv(cfd,(void *)filename,MAXLINE,0);
-		printf("Calling Registry with filename: \"%s\"\n",filename);
-		char *temp = lookup(filename);
-		if(temp != NULL)
+		char cmdstr[2];
+		char filename[MAXLINE];
+		char peerid[HOSTNAMELENGTH];
+		//Receive command #
+		//1 = Register, 2 = lookup
+		recv(cfd,(void *)cmdstr,2,0);
+		int cmd = atoi(cmdstr);
+		if(cmd == 1)
 		{
-			//Tell client we found file (Next message file name)
-			send(cfd,"1",2,0);
-			send(cfd,(void *)temp,HOSTNAMELENGTH,0);
-			printf("Server found host %s has file\n",temp);
+			recv(cfd,(void *)filename,MAXLINE,0);
+			recv(cfd,(void *)peerid,HOSTNAMELENGTH,0);
+			printf("Calling Registry with filename: \"%s\"\n",filename);
+			registry(peerid,filename);
 		}
-		else
+		else if(cmd == 2)
 		{
-			//Tell client we did not find file
-			send(cfd,"0",2,0);
-			printf("Server did not find file\n");
+			recv(cfd,(void *)filename,MAXLINE,0);
+			printf("Calling Registry with filename: \"%s\"\n",filename);
+			char *temp = lookup(filename);
+			if(temp != NULL)
+			{
+				//Tell client we found file (Next message file name)
+				send(cfd,"1",2,0);
+				send(cfd,(void *)temp,HOSTNAMELENGTH,0);
+				printf("Server found host %s has file\n",temp);
+			}
+			else
+			{
+				//Tell client we did not find file
+				send(cfd,"0",2,0);
+				printf("Server did not find file\n");
+			}
 		}
-	}
 	}
 	printf("Done\n");
-	/*
-	char *s1 = "Sv";
-	char *s2 = malloc(2*sizeof(char));
-	send(cfd,(const void *)s1,2,0);
-	recv(cfd,(void *)s2,2,0);
-	printf("From client: %s\n",s2);
-	free(s2);
-	*/
 	print_registry();
 	unlink(sa.sun_path);
 	close(sfd);
