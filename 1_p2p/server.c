@@ -7,7 +7,6 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdlib.h>
-#include <rpc/rpc.h>
 #include "const.h"
 
 /*TODO:
@@ -76,7 +75,13 @@ int main(int argc, char **argv)
 		char peerid[HOSTNAMELENGTH];
 		//Receive command #
 		//1 = Register, 2 = lookup
-		recv(cfd,(void *)cmdstr,2,0);
+		printf("Waiting next command\n");
+
+		//TODO, ensure that when client closes, this does not loop, should try
+		//to accept again instead.
+		if(recv(cfd,(void *)cmdstr,2,0) == 0)
+			break;
+		printf("Received\n");
 		int cmd = atoi(cmdstr);
 		if(cmd == 1)
 		{
@@ -109,6 +114,7 @@ int main(int argc, char **argv)
 	print_registry();
 	unlink(sa.sun_path);
 	close(sfd);
+	close(cfd);
 	free_list();
 	return 0;
 }
