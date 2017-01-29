@@ -12,7 +12,10 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include "const.h"
-//TODO append .. to client servers to connect to
+//TODO
+//Can set path for where to look for files
+//Remove entries from server once client is closed
+//Be able to select from a list of peers to receive from
 
 //Function Prototypes
 int prompt(void);
@@ -79,7 +82,7 @@ void client_user(void)
 	int err;
 	memset(&sa,0,sizeof(sa));
 	sa.sun_family = AF_UNIX;
-	strcpy(sa.sun_path, "SERV");
+	strcpy(sa.sun_path, "../SERV");
 	//Connect to cental indexing server
 	err = connect(sfd,(const struct sockaddr *)&sa,sizeof(sa));
 	if(err < 0)
@@ -264,7 +267,7 @@ void retrieve(char *filename, char *peerid)
 	int rem = atoi(filesize);
 	printf("file would be received here\n");
 	char buf[BUFFSIZE];
-	FILE *file = fopen(filename,"r+");
+	FILE *file = fopen(filename,"w");
 	int recvb = 0;
 	//Write to a new file
 	while(((recvb = recv(sfd,buf,BUFFSIZE,0)) > 0) && (rem > 0))
