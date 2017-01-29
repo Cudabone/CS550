@@ -13,13 +13,15 @@
 #include <pthread.h>
 #include "const.h"
 //TODO
+//Be able to select from a list of peers to receive from
+//Check if file is modified
+
 //Can set path for where to look for files
 //Remove entries from server once client is closed
-//Be able to select from a list of peers to receive from
 
 //Function Prototypes
 int prompt(void);
-int prompt_receive(void);
+int prompt_receive(int sfd,int numpeers,char *peerid);
 void read_filename(char *filename, int flag);
 void *distribute_threads(void *i);
 void create_threads(void);
@@ -42,6 +44,7 @@ struct sockaddr_un csa;
 int csfd;
 //hostname for client server
 char hostname[HOSTNAMELENGTH];
+char *peerlist[NUMCLIENTS] = {NULL};
 int main(int argc, char **argv)
 {
 	//Parse client server name
@@ -94,6 +97,8 @@ void client_user(void)
 		cmd = prompt();
 		char filename[MAXLINE];	
 		char peerid[HOSTNAMELENGTH];
+		char numpeers[PEERRECVNUMCHARS];
+		int numpeersint;
 		char found[2];
 		int found_int;
 		switch(cmd){
@@ -120,9 +125,13 @@ void client_user(void)
 			 	if(found_int)	
 				{
 					//send/recv from other client
-					recv(sfd,(void *)peerid,HOSTNAMELENGTH,0);
-					printf("Received peerid: %s\n",peerid);
-					int input = prompt_receive();
+					//recv(sfd,(void *)peerid,HOSTNAMELENGTH,0);
+					//Receive number of peer file holders
+					recv(sfd,(void *)numpeers,PEERRECVNUMCHARS,0);
+					//Convert it to an integer
+					numpeersint = atoi(numpeers);
+					//printf("Received peerid: %s\n",peerid);
+					int input = prompt_receive(sfd,numpeersint,peerid);
 					//Receive
 					if(input == 1)
 					{
@@ -177,14 +186,15 @@ int prompt(void)
 /* Prompt the user as to whether they want to receive, 
  * then which user they want to receive from
  */
-int prompt_receive(void)
+int prompt_receive(int sfd, int numpeers,char *peerid)
 {
 	int input;
 	int valid = 1;
 	char str[MAXLINE];
+	char peers[NUMCLIENTS][HOSTNAMELENGTH];
 
 	do{
-		printf("Retrieve from peer?\n");
+		printf("Retrieve from a peer?\n");
 		printf("1: Yes\n");
 		printf("2: No\n");
 		fgets(str,MAXLINE,stdin);
@@ -195,6 +205,31 @@ int prompt_receive(void)
 			printf("Invalid input, try again\n");
 		}
 	}while(!valid);
+	//If want to retrieve
+	if(input == 1)
+	{
+		int peernum;
+		//Choose which peer
+		int i;
+		valid = 1;
+		printf("Select which peer to retrieve file from\n");
+		for(i = 0; i < numpeers; i++)
+		{
+			recv(sfd,(void *)peers[i],HOSTNAMELENGTH,0);	
+			printf("%d: %s\n",i,peers[i]);
+		}
+		do{
+			fgets(str,MAXLINE,stdin);
+			peernum = atoi(str);
+			if(peernum < 0 || peernum > numpeers)
+			{
+				valid = 0;
+				printf("Invalid input, try again\n");
+			}
+		}while(!valid);
+		strcpy(peerid,peers[peernum]);
+		printf("Selected peerid: %s\n",peerid);
+	}
 	return input;
 }
 //flag = 0 : Register, flag = 1 : Lookup

@@ -23,12 +23,14 @@ typedef struct
 
 pfile *files[MAXFILES] = {NULL}; 
 char *lookup(const char *filename);
+int check_lookup(const char *peerid,const char *filename);
 int registry(const char *peerid, const char *filename);
 int remove_entry(const char *peerid, const char *filename);
 void free_list(void);
 void print_registry();
 void create_server(void);
 void *process_request(void *i);
+void sendlist(int cfd, char *filename);
 
 //Server socket info
 struct sockaddr_un sa;
@@ -97,6 +99,11 @@ void create_server(void)
 int registry(const char *peerid, const char *filename)
 {
 	int i;
+	if(check_lookup(peerid,filename))
+	{
+		printf("File already registered\n");
+		return 0;
+	}
 	for(i = 0; i < MAXFILES; i++)
 	{
 		if(files[i] == NULL)
@@ -137,6 +144,19 @@ char *lookup(const char *filename)
 			return files[i]->peerid;
 	}
 	return NULL;
+}
+/* Checks if already registered
+ * 1 = already registered, 0 = not
+ */
+int check_lookup(const char *peerid,const char *filename)
+{
+	int i;
+	for(i = 0; i < MAXFILES; i++)
+	{
+		if(files[i] != NULL && strcmp(files[i]->filename,filename) == 0 && strcmp(files[i]->peerid,peerid) == 0)
+			return 1;
+	}
+	return 0;
 }
 void free_list(void)
 {
@@ -201,7 +221,8 @@ void *process_request(void *i)
 			{
 				//Tell client we found file (Next message file name)
 				send(cfd,"1",2,0);
-				send(cfd,(void *)temp,HOSTNAMELENGTH,0);
+				//send(cfd,(void *)temp,HOSTNAMELENGTH,0);
+				sendlist(cfd,filename);
 				printf("Server found host %s has file\n",temp);
 			}
 			else
@@ -215,4 +236,26 @@ void *process_request(void *i)
 	close(cfd);
 	printf("Done\n");
 	return NULL;
+}
+void sendlist(int cfd, char *filename)
+{
+	int i;
+	int count = 0;
+	char countstr[PEERRECVNUMCHARS];
+	for(i = 0; i < MAXFILES; i++)
+	{
+		if(files[i] != NULL && strcmp(files[i]->filename,filename) == 0)
+		{
+			count++;
+		}
+	}
+	sprintf(countstr,"%d",count);
+	send(cfd,(void *)countstr,PEERRECVNUMCHARS,0);
+	for(i = 0; i < MAXFILES; i++)
+	{
+		if(files[i] != NULL && strcmp(files[i]->filename,filename) == 0)		
+		{
+			send(cfd,(void *)(files[i]->peerid),HOSTNAMELENGTH,0);
+		}
+	}
 }
