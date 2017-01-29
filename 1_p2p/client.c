@@ -29,6 +29,9 @@ void retrieve_server(void);
 void create_server(void);
 void client_user(void);
 void retrieve(char *filename, char *peerid);
+void add_file(char *filename);
+void free_files();
+void file_checker();
 
 /* NOTES
  * Threads: 1 thread for user
@@ -43,8 +46,11 @@ void retrieve(char *filename, char *peerid);
 struct sockaddr_un csa;
 int csfd;
 //hostname for client server
+char *files[MAXUSRFILES] = {NULL};
 char hostname[HOSTNAMELENGTH];
 char *peerlist[NUMCLIENTS] = {NULL};
+//Parameter to close file checker
+int done = 0;
 int main(int argc, char **argv)
 {
 	//Parse client server name
@@ -66,6 +72,7 @@ int main(int argc, char **argv)
 	//Create the threads for client and client-server
 	create_threads();
 	//close the server
+	free_files();
 	unlink(csa.sun_path);
 	close(csfd);
 }
@@ -111,6 +118,7 @@ void client_user(void)
 				//Send Server filename and hostname
 				send(sfd,(void *)filename,MAXLINE,0);
 				send(sfd,hostname,HOSTNAMELENGTH,0);
+				add_file(filename);
 				break;
 			//Do a lookup and then can retrieve
 			case 2: 
@@ -151,6 +159,7 @@ void client_user(void)
 				break;
 		}
 	}while(cmd != 3);
+	done = 1;
 	unlink(sa.sun_path);
 	close(sfd);
 	//Close client server as well
@@ -278,10 +287,59 @@ void read_filename(char *filename, int flag)
 	//Close the file
 	//printf("\"%s\"\n",filename);
 }
-//Get the server name to retrieve
-void read_server(char *server)
+/* Checks if any registered files from client were moved
+ * or can no longer be opened. If so remove from central
+ * indexing server
+ */
+void file_checker()
 {
-	printf("Enter the server\n");
+	struct sockaddr_un sa;
+	int sfd;
+	printf("File checker running\n");
+	//Socket over localhost to central indexing server
+	sfd = socket(AF_UNIX,SOCK_STREAM,0);
+	if(sfd < 0)
+		perror("Socket");
+
+	//Set socket structure variables
+	int err;
+	memset(&sa,0,sizeof(sa));
+	sa.sun_family = AF_UNIX;
+	strcpy(sa.sun_path, "../SERV");
+	//Connect to cental indexing server
+	err = connect(sfd,(const struct sockaddr *)&sa,sizeof(sa));
+	if(err < 0)
+		perror("Connect");
+
+	int i;
+	while(!done)
+	{
+		FILE *file;
+		for(i = 0; i < MAXUSRFILES; i++)
+		{
+			if(files[i] != NULL)	
+			{
+				file = fopen((const char *)files[i],"r");
+				if(file == NULL)
+				{
+					printf("File %s moved or deleted: Updating server\n",files[i]);
+					//Tell server to remove from list, if available
+					if(send(sfd,"4",2,0) < 0)
+					{
+						close(sfd);
+						return;
+					}
+					//Send file name and host name
+					send(sfd,(void *)files[i],MAXLINE,0);
+					send(sfd,(void *)hostname,HOSTNAMELENGTH,0);
+					free(files[i]);
+					files[i] = NULL;
+				}
+				else
+					fclose(file);
+			}
+		}
+	}
 }
 /* Set up a server to retrieve from other client
  * and receive the file filename from peerid
@@ -438,8 +496,8 @@ void create_threads(void)
 	//Create the n threads
 	pthread_t threads[NTHREADS];
 	int i;
-	int num[NTHREADS];
-	void *p = num;
+	int num[NTHREADS] = {0};
+	int *p = num;
 	for(i = 0; i < NTHREADS; i++)
 	{
 		num[i] = i;
@@ -460,7 +518,7 @@ void create_threads(void)
 void *distribute_threads(void *i)
 {
 	int num = *((int *)i);
-	//int *num = (int)*i;
+	//printf("Thread #: %d\n",num);
 	switch(num)
 	{
 		case 0:
@@ -469,6 +527,7 @@ void *distribute_threads(void *i)
 			break;
 		case 1:
 			//File checking
+			file_checker();
 			break;
 		default:
 			//retrieve server
@@ -476,4 +535,24 @@ void *distribute_threads(void *i)
 			break;
 	}
 	return NULL;
+}
+void add_file(char *filename)
+{
+	int i;
+	for(i = 0; i < MAXUSRFILES;i++)
+	{
+		if(files[i] == NULL)
+		{
+			files[i] = malloc(MAXLINE);
+			strcpy(files[i],filename);
+			break;
+		}
+	}
+}
+void free_files()
+{
+	int i;
+	for(i = 0; i < MAXUSRFILES;i++)
+		if(files[i] != NULL)
+			free(files[i]);
 }

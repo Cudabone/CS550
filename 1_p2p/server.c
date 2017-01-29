@@ -40,17 +40,17 @@ int main(int argc, char **argv)
 {
 	create_server();
 
-	//Create threads
-	pthread_t threads[NUMCLIENTS];
+	//Create threads, two per client for user and file checker
+	pthread_t threads[NUMCLIENTS*2];
 	int i;
-	for(i = 0; i < NUMCLIENTS; i++)
+	for(i = 0; i < NUMCLIENTS*2; i++)
 	{
 		/* Call gauss with each thread and paremeter i which
 		 * will act like a rank in MPI */
 		pthread_create(&threads[i],NULL,process_request,NULL);
 	}
 	/* Terminate all threads */
-	for(i = 0; i < NUMCLIENTS; i++)
+	for(i = 0; i < NUMCLIENTS*2; i++)
 	{
 		pthread_join(threads[i],NULL);
 	}
@@ -91,7 +91,7 @@ void create_server(void)
 		perror("Bind");
 
 	//Listen for connections, maximum of 3 clients
-	err = listen(sfd,NUMCLIENTS);
+	err = listen(sfd,NUMCLIENTS*2);
 	if(err < 0)
 		perror("Listen");
 
@@ -254,6 +254,13 @@ void *process_request(void *i)
 				recv(cfd,(void *)peerid,HOSTNAMELENGTH,0);
 				printf("Removing all entries for peerid %s\n",peerid);
 				remove_all_entries(peerid);
+				break;
+			case 4:
+				printf("Server called to remove file\n");
+				recv(cfd,(void *)filename,MAXLINE,0);
+				recv(cfd,(void *)peerid,HOSTNAMELENGTH,0);
+				remove_entry(peerid,filename);
+				printf("Removing file %s, file removed from client %s\n",filename,peerid);
 				break;
 		}
 		/*
