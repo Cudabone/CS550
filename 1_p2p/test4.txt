@@ -1,0 +1,7 @@
+Testing 1000 sequential requests
+Server waiting for connection
+Server waiting for connection
+Server waiting for connection
+Server waiting for connection
+
+Avg Response time = 0.180167 ms.

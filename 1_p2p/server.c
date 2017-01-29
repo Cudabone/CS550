@@ -15,12 +15,14 @@
  */
 
 #define MAXFILES 64
+//structure to hold peers with files
 typedef struct
 {
 	char peerid[HOSTNAMELENGTH];
 	char *filename;
 } pfile;
 
+//Function prototypes
 pfile *files[MAXFILES] = {NULL}; 
 char *lookup(const char *filename);
 int check_lookup(const char *peerid,const char *filename);
@@ -54,21 +56,14 @@ int main(int argc, char **argv)
 	{
 		pthread_join(threads[i],NULL);
 	}
+	//Print all registered files
 	print_registry();
 	unlink(sa.sun_path);
 	close(sfd);
+	//free all files
 	free_list();
-	//IPv4 AF_INET socket
-	//struct sockaddr_in sai;
-
-	//Local AF_UNIX socket
-
-	//Socket over IPv4
-	//sockfd = socket(AF_INET,SOCK_SEQPACKET,0);	
-	
-	//Socket over localhost
-
 }
+//Creates the central indexing server with file descriptor sfd
 void create_server(void)
 {
 	//Socket over localhost
@@ -85,26 +80,30 @@ void create_server(void)
 	char *filename;
 	strncpy(sa.sun_path, filename, sizeof(sa.sun_path));
 	*/
+	//Bind the server to path
 	int err;
 	err = bind(sfd,(struct sockaddr*)&sa,sizeof(sa));	
 	if(err < 0)
 		perror("Bind");
 
-	//Listen for connections, maximum of 3 clients
+	//Listen for connections, maximum of numclients*2 clients
 	err = listen(sfd,NUMCLIENTS*2);
 	if(err < 0)
 		perror("Listen");
 
 }
 /* 0 on success, -1 on failure: list full */
+//Registers a file from user to list 
 int registry(const char *peerid, const char *filename)
 {
 	int i;
+	//Check if file already registered
 	if(check_lookup(peerid,filename))
 	{
 		printf("File already registered\n");
 		return 0;
 	}
+	//Else find a space and add it
 	for(i = 0; i < MAXFILES; i++)
 	{
 		if(files[i] == NULL)
@@ -116,10 +115,13 @@ int registry(const char *peerid, const char *filename)
 			return 0;
 		}
 	}
+	//If control reaches here, list is full
 	printf("Server registry full\n");
 	return -1;
 }
 /* 0 on success, -1 on failure: entry not in list */
+//Removes a specific entry from the list, used by the clients
+//file status checker
 int remove_entry(const char *peerid, const char *filename)
 {
 	int i;
@@ -135,6 +137,7 @@ int remove_entry(const char *peerid, const char *filename)
 	}
 	return -1;
 }
+//Removes all entries for a client, called on disconnecting
 void remove_all_entries(const char *peerid)
 {
 	int i;
@@ -149,6 +152,7 @@ void remove_all_entries(const char *peerid)
 	}
 }
 /* peerid on success, -1 on failure: file not in list*/
+//Lookup a file on the server
 char *lookup(const char *filename)
 {
 	int i;
@@ -172,6 +176,7 @@ int check_lookup(const char *peerid,const char *filename)
 	}
 	return 0;
 }
+//Free the entire file list
 void free_list(void)
 {
 	int i;
@@ -184,6 +189,7 @@ void free_list(void)
 		}
 	}
 }
+//Print the file registry, used for debugging
 void print_registry()
 {
 	int i;
@@ -195,8 +201,10 @@ void print_registry()
 		}
 	}
 }
+//Process a request from a client, or client file checker
 void *process_request(void *i)
 {
+	//Create a socket addr for client
 	struct sockaddr_un ca;
 	int cfd;
 	socklen_t len = sizeof(ca);
@@ -204,6 +212,7 @@ void *process_request(void *i)
 	cfd = accept(sfd,(struct sockaddr*)&ca,&len);
 	printf("Connected\n");
 
+	//Loop until all clients disconnected
 	while(1)
 	{
 		char cmdstr[2];
@@ -213,26 +222,31 @@ void *process_request(void *i)
 		//1 = Register, 2 = lookup
 		printf("Waiting next command\n");
 
-		//TODO, ensure that when client closes, this does not loop, should try
-		//to accept again instead.
+		//Receive command from client to perform
 		if(recv(cfd,(void *)cmdstr,2,0) == 0)
 			break;
 		printf("Received\n");
+		//convert to integer
 		int cmd = atoi(cmdstr);
 		switch(cmd)
 		{
 			//Register file for client
 			case 1:	
+				//Get file name and peerid(hostname)
 				recv(cfd,(void *)filename,MAXLINE,0);
 				recv(cfd,(void *)peerid,HOSTNAMELENGTH,0);
 				printf("Calling Registry with filename: \"%s\"\n",filename);
+				//Register the file 
 				registry(peerid,filename);
 				break;
 			//Lookup file for client
 			case 2:
+				//Get file name from client
 				recv(cfd,(void *)filename,MAXLINE,0);
 				printf("Calling Registry with filename: \"%s\"\n",filename);
+				//Check if file is held in registry
 				char *temp = lookup(filename);
+				//If file found
 				if(temp != NULL)
 				{
 					//Tell client we found file (Next message file name)
@@ -240,8 +254,9 @@ void *process_request(void *i)
 					//send(cfd,(void *)temp,HOSTNAMELENGTH,0);
 					printf("Sending list\n");
 					sendlist(cfd,filename);
-					printf("Server found host %s has file\n",temp);
+					//printf("Server found host %s has file\n",temp);
 				}
+				//If file not found
 				else
 				{
 					//Tell client we did not find file
@@ -249,61 +264,38 @@ void *process_request(void *i)
 					printf("Server did not find file\n");
 				}
 				break;
-				//Client closing, unregister all files
+			//Client closing, unregister all files
 			case 3:
+				//Get client peerid to remove all files
 				recv(cfd,(void *)peerid,HOSTNAMELENGTH,0);
 				printf("Removing all entries for peerid %s\n",peerid);
+				//remove all files for peerid
 				remove_all_entries(peerid);
 				break;
+			//Called by client file checker when file gone
 			case 4:
 				printf("Server called to remove file\n");
+				//Get file name and peerid
 				recv(cfd,(void *)filename,MAXLINE,0);
 				recv(cfd,(void *)peerid,HOSTNAMELENGTH,0);
+				//Remove the entry for the file
 				remove_entry(peerid,filename);
 				printf("Removing file %s, file removed from client %s\n",filename,peerid);
 				break;
 		}
-		/*
-		if(cmd == 1)
-		{
-			recv(cfd,(void *)filename,MAXLINE,0);
-			recv(cfd,(void *)peerid,HOSTNAMELENGTH,0);
-			printf("Calling Registry with filename: \"%s\"\n",filename);
-			registry(peerid,filename);
-		}
-		//Lookup file for client
-		else if(cmd == 2)
-		{
-			recv(cfd,(void *)filename,MAXLINE,0);
-			printf("Calling Registry with filename: \"%s\"\n",filename);
-			char *temp = lookup(filename);
-			if(temp != NULL)
-			{
-				//Tell client we found file (Next message file name)
-				send(cfd,"1",2,0);
-				//send(cfd,(void *)temp,HOSTNAMELENGTH,0);
-				printf("Sending list\n");
-				sendlist(cfd,filename);
-				printf("Server found host %s has file\n",temp);
-			}
-			else
-			{
-				//Tell client we did not find file
-				send(cfd,"0",2,0);
-				printf("Server did not find file\n");
-			}
-		}
-		*/
 	}
+	//Close the connection
 	close(cfd);
 	printf("Done\n");
 	return NULL;
 }
+//Send an entire client listing for a specific file
 void sendlist(int cfd, char *filename)
 {
 	int i;
 	int count = 0;
 	char countstr[PEERRECVNUMCHARS];
+	//Count the number of clients who have file
 	for(i = 0; i < MAXFILES; i++)
 	{
 		if(files[i] != NULL && strcmp(files[i]->filename,filename) == 0)
@@ -313,12 +305,14 @@ void sendlist(int cfd, char *filename)
 	}
 	printf("Found %d clients with file\n",count);
 	snprintf(countstr,PEERRECVNUMCHARS,"%d",count);
+	//Send number of clients who have file
 	send(cfd,(void *)countstr,PEERRECVNUMCHARS,0);
 	printf("Sending clients\n");
 	for(i = 0; i < MAXFILES; i++)
 	{
 		if(files[i] != NULL && strcmp(files[i]->filename,filename) == 0)		
 		{
+			//Send each client who has file
 			printf("Sending client for list: %s\n",files[i]->peerid);
 			send(cfd,(files[i]->peerid),HOSTNAMELENGTH,0);
 		}

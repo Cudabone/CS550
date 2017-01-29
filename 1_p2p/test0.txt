@@ -1,0 +1,57 @@
+Script started on Sun Jan 29 18:20:40 2017
+command: ./client ../cl1
+Server waiting for connection
+Server waiting for connection
+Enter the number for the desired command
+Server waiting for connection
+1: Register a file to the server
+2: Look up / Retreive a file
+3: Exit
+2
+Enter the filename to lookup/register
+1.txt
+File found on server
+Retrieve from a peer?
+1: Yes
+2: No
+1
+Select which peer to retrieve file from
+0: ../cl2
+1: ../cl3
+0
+Selected peerid: ../cl2
+Display file '1.txt'...too large
+File received
+Enter the number for the desired command
+1: Register a file to the server
+2: Look up / Retreive a file
+3: Exit
+1
+Enter the filename to lookup/register
+1.txt
+Enter the number for the desired command
+1: Register a file to the server
+2: Look up / Retreive a file
+3: Exit
+2
+Enter the filename to lookup/register
+1.txt
+File found on server
+Retrieve from a peer?
+1: Yes
+2: No
+1
+Select which peer to retrieve file from
+0: ../cl2
+1: ../cl3
+2: ../cl1
+3 2
+Selected peerid: ../cl1
+Cannot retrieve from self
+Enter the number for the desired command
+1: Register a file to the server
+2: Look up / Retreive a file
+3: Exit
+3
+
+Script done on Sun Jan 29 18:22:11 2017

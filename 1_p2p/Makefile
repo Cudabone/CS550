@@ -6,10 +6,10 @@ CFLAGS = -g -Wall
 all: server client 
 	@echo build complete
 
-server: server.c
+server: server.c const.h
 	$(CC) $(CFLAGS) server.c -o server
 
-client: client.c
+client: client.c const.h
 	$(CC) $(CFLAGS) client.c -o client
 
 clean: 

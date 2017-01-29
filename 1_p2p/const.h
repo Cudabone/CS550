@@ -3,8 +3,8 @@
 //Maximum hostname length
 #define HOSTNAMELENGTH 16
 //Number of clients
-#define NUMCLIENTS 2
-//Number of threads, minimum = 3
+#define NUMCLIENTS 3
+//Number of threads for client, minimum = 3
 #define NTHREADS NUMCLIENTS+2
 //File size significant digits; Ex 1024 = 4
 #define MAXFILESIZECHARS 256

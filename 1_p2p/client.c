@@ -11,13 +11,13 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <pthread.h>
+#include <sys/times.h>
+#include <sys/time.h>
+#include <time.h>
 #include "const.h"
-//TODO
-//Be able to select from a list of peers to receive from
-//Check if file is modified
 
-//Can set path for where to look for files
-//Remove entries from server once client is closed
+//Uncomment for testing
+//#define TESTING
 
 //Function Prototypes
 int prompt(void);
@@ -33,13 +33,6 @@ void add_file(char *filename);
 void free_files();
 void file_checker();
 
-/* NOTES
- * Threads: 1 thread for user
- * 			2 threads (one per other client)
- * 			1 thread to check files
- */
-
-//Central server connection
 //Client-Server connection
 //
 //Client server and client client addr
@@ -65,7 +58,7 @@ int main(int argc, char **argv)
 		return 1;
 	}
 	strcpy(hostname,argv[1]);
-	printf("Hostname: %s\n",hostname);
+	//printf("Hostname: %s\n",hostname);
 
 	//Create the client server, socket file descriptor csfd
 	create_server();
@@ -97,6 +90,51 @@ void client_user(void)
 	err = connect(sfd,(const struct sockaddr *)&sa,sizeof(sa));
 	if(err < 0)
 		perror("Connect");
+
+	#ifdef TESTING
+	printf("Testing 1000 sequential requests\n");
+
+	/* Timing code privided by Dr.Sun in CS546*/
+
+	/* Timing variables */
+	struct timeval etstart, etstop;  /* Elapsed times using gettimeofday() */
+	struct timezone tzdummy;
+	clock_t etstart2, etstop2;	/* Elapsed times using times() */
+	unsigned long long usecstart, usecstop;
+	struct tms cputstart, cputstop;  /* CPU times for my processes */
+	//Start clock
+	gettimeofday(&etstart, &tzdummy);
+	etstart2 = times(&cputstart);
+	int i;
+	for(i = 0; i < 1000;i++)
+	{
+		//Do a lookup request
+		//Send Server command #
+		char found[2];
+		int found_int;
+		char *filename = "testing.txt";
+		send(sfd,"2",2,0);
+		send(sfd,(void *)filename,MAXLINE,0);
+		//Read if server found the file
+		recv(sfd,(void *)found,2,0);
+		found_int = atoi(found);
+	}
+	gettimeofday(&etstop, &tzdummy);
+	etstop2 = times(&cputstop);
+	usecstart = (unsigned long long)etstart.tv_sec * 1000000 + etstart.tv_usec;
+	usecstop = (unsigned long long)etstop.tv_sec * 1000000 + etstop.tv_usec;
+	/* Display timing results */
+	//Divide to by 1000 to get milliseconds, and and another thousand for the
+	//requests
+	printf("\nAvg Response time = %g ms.\n",(float)(usecstop - usecstart)/(float)(1000*1000));
+	done = 1;
+	unlink(sa.sun_path);
+	close(sfd);
+	//Close client server as well
+	unlink(csa.sun_path);
+	close(csfd);
+	return;
+	#endif
 
 	int cmd;
 	do{
@@ -175,8 +213,9 @@ int prompt(void)
 	//Scan input
 	//scanf("%d",&input);
 	char str[MAXLINE];
-	int valid = 1;
+	int valid;
 	do{
+		valid = 1;
 		printf("Enter the number for the desired command\n");
 		printf("1: Register a file to the server\n");
 		printf("2: Look up / Retreive a file\n");
@@ -235,16 +274,11 @@ int prompt_receive(int sfd, int numpeers,char *peerid)
 			char str[MAXLINE];
 			fgets(str,MAXLINE,stdin);
 			peernum = atoi(str);
-			printf("Numpeers: %d, Peernum chosen: %d\n",numpeers,peernum);
+			//printf("Numpeers: %d, Peernum chosen: %d\n",numpeers,peernum);
 			if(peernum < 0 || peernum > numpeers)
 			{
 				valid = 0;
 				printf("Invalid input, try again\n");
-			}
-			if(peers[peernum] == hostname)
-			{
-				valid = 0;
-				printf("Cannot select self\n");
 			}
 		}while(!valid);
 		strcpy(peerid,peers[peernum]);
@@ -275,7 +309,7 @@ void read_filename(char *filename, int flag)
 			file = fopen((const char *)filename,"r");
 			if(file == NULL)
 			{
-				printf("File does not exist!\n");
+				printf("File does not exist, try again\n");
 			}
 			else
 			{
@@ -295,7 +329,7 @@ void file_checker()
 {
 	struct sockaddr_un sa;
 	int sfd;
-	printf("File checker running\n");
+	//printf("File checker running\n");
 	//Socket over localhost to central indexing server
 	sfd = socket(AF_UNIX,SOCK_STREAM,0);
 	if(sfd < 0)
@@ -377,13 +411,30 @@ void retrieve(char *filename, char *peerid)
 	char buf[BUFFSIZE];
 	FILE *file = fopen(filename,"w");
 	int recvb = 0;
+	int totalb = atoi(filesize);
 	//Write to a new file
+	printf("Display file '%s'",filename);
+	if(totalb < 1000)
+		printf("\n");
+	else
+		printf("...too large\n");
 	while(((recvb = recv(sfd,buf,BUFFSIZE,0)) > 0) && (rem > 0))
 	{
 		fwrite(buf,sizeof(char),recvb,file);
 		rem -= recvb;
+		//write if file less that 1K
+		if(totalb < 1000)
+		{
+			fwrite(buf,sizeof(char),recvb,stdout);
+		}
 	}
 	printf("File received\n");
+	//Display file if less than 1KB
+	fclose(file);
+	file = fopen(filename,"r");
+	if(atoi(filesize) < 1000)
+	{
+	}
 	fclose(file);
 	//unlink(sa.sun_path);
 	close(sfd);
@@ -536,6 +587,7 @@ void *distribute_threads(void *i)
 	}
 	return NULL;
 }
+/* Adds a file to this clients file listing */
 void add_file(char *filename)
 {
 	int i;
@@ -549,6 +601,7 @@ void add_file(char *filename)
 		}
 	}
 }
+/* Frees all files from file listing for this client */
 void free_files()
 {
 	int i;
