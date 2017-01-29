@@ -144,8 +144,10 @@ void client_user(void)
 					printf("File does not exist on server\n");
 				}
 				break;
-			//Close the client
+			//Close the client, unregister all files
 			case 3:
+				send(sfd,"3",2,0);	
+				send(sfd,(void *)hostname,HOSTNAMELENGTH,0);
 				break;
 		}
 	}while(cmd != 3);
@@ -189,12 +191,13 @@ int prompt(void)
  */
 int prompt_receive(int sfd, int numpeers,char *peerid)
 {
-	int input;
 	int valid = 1;
-	char str[MAXLINE];
 	char peers[NUMCLIENTS][HOSTNAMELENGTH];
+	int input;
 
 	do{
+		valid = 1;
+		char str[MAXLINE];
 		printf("Retrieve from a peer?\n");
 		printf("1: Yes\n");
 		printf("2: No\n");
@@ -207,12 +210,11 @@ int prompt_receive(int sfd, int numpeers,char *peerid)
 		}
 	}while(!valid);
 	//If want to retrieve
+	int peernum;
 	if(input == 1)
 	{
-		int peernum;
 		//Choose which peer
 		int i;
-		valid = 1;
 		printf("Select which peer to retrieve file from\n");
 		for(i = 0; i < numpeers; i++)
 		{
@@ -220,12 +222,20 @@ int prompt_receive(int sfd, int numpeers,char *peerid)
 			printf("%d: %s\n",i,peers[i]);
 		}
 		do{
+			valid = 1;
+			char str[MAXLINE];
 			fgets(str,MAXLINE,stdin);
 			peernum = atoi(str);
+			printf("Numpeers: %d, Peernum chosen: %d\n",numpeers,peernum);
 			if(peernum < 0 || peernum > numpeers)
 			{
 				valid = 0;
 				printf("Invalid input, try again\n");
+			}
+			if(peers[peernum] == hostname)
+			{
+				valid = 0;
+				printf("Cannot select self\n");
 			}
 		}while(!valid);
 		strcpy(peerid,peers[peernum]);
@@ -278,6 +288,11 @@ void read_server(char *server)
  */
 void retrieve(char *filename, char *peerid)
 {
+	if(strcmp(peerid,hostname) == 0)
+	{
+		printf("Cannot retrieve from self\n");
+		return;
+	}
 	struct sockaddr_un sa;
 	int sfd;
 	//Create socket for client-client transaction
@@ -301,7 +316,6 @@ void retrieve(char *filename, char *peerid)
 	recv(sfd,(void *)filesize,MAXFILESIZECHARS,0);
 	//File size and remaining bytes
 	int rem = atoi(filesize);
-	printf("file would be received here\n");
 	char buf[BUFFSIZE];
 	FILE *file = fopen(filename,"w");
 	int recvb = 0;
@@ -311,6 +325,7 @@ void retrieve(char *filename, char *peerid)
 		fwrite(buf,sizeof(char),recvb,file);
 		rem -= recvb;
 	}
+	printf("File received\n");
 	fclose(file);
 	//unlink(sa.sun_path);
 	close(sfd);
@@ -408,6 +423,7 @@ void retrieve_server(void)
 			close(ccfd);
 			return;
 		}
+		printf("File sent\n");
 		//close file 
 		close(fd);
 		//close client connection

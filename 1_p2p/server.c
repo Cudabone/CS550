@@ -31,6 +31,7 @@ void print_registry();
 void create_server(void);
 void *process_request(void *i);
 void sendlist(int cfd, char *filename);
+void remove_all_entries(const char *peerid);
 
 //Server socket info
 struct sockaddr_un sa;
@@ -134,6 +135,19 @@ int remove_entry(const char *peerid, const char *filename)
 	}
 	return -1;
 }
+void remove_all_entries(const char *peerid)
+{
+	int i;
+	for(i = 0; i < MAXFILES; i++)
+	{
+		if(files[i]!= NULL && strcmp(files[i]->peerid,peerid) == 0)
+		{
+			free(files[i]->filename);
+			free(files[i]);
+			files[i] = NULL;
+		}
+	}
+}
 /* peerid on success, -1 on failure: file not in list*/
 char *lookup(const char *filename)
 {
@@ -205,6 +219,44 @@ void *process_request(void *i)
 			break;
 		printf("Received\n");
 		int cmd = atoi(cmdstr);
+		switch(cmd)
+		{
+			//Register file for client
+			case 1:	
+				recv(cfd,(void *)filename,MAXLINE,0);
+				recv(cfd,(void *)peerid,HOSTNAMELENGTH,0);
+				printf("Calling Registry with filename: \"%s\"\n",filename);
+				registry(peerid,filename);
+				break;
+			//Lookup file for client
+			case 2:
+				recv(cfd,(void *)filename,MAXLINE,0);
+				printf("Calling Registry with filename: \"%s\"\n",filename);
+				char *temp = lookup(filename);
+				if(temp != NULL)
+				{
+					//Tell client we found file (Next message file name)
+					send(cfd,"1",2,0);
+					//send(cfd,(void *)temp,HOSTNAMELENGTH,0);
+					printf("Sending list\n");
+					sendlist(cfd,filename);
+					printf("Server found host %s has file\n",temp);
+				}
+				else
+				{
+					//Tell client we did not find file
+					send(cfd,"0",2,0);
+					printf("Server did not find file\n");
+				}
+				break;
+				//Client closing, unregister all files
+			case 3:
+				recv(cfd,(void *)peerid,HOSTNAMELENGTH,0);
+				printf("Removing all entries for peerid %s\n",peerid);
+				remove_all_entries(peerid);
+				break;
+		}
+		/*
 		if(cmd == 1)
 		{
 			recv(cfd,(void *)filename,MAXLINE,0);
@@ -212,6 +264,7 @@ void *process_request(void *i)
 			printf("Calling Registry with filename: \"%s\"\n",filename);
 			registry(peerid,filename);
 		}
+		//Lookup file for client
 		else if(cmd == 2)
 		{
 			recv(cfd,(void *)filename,MAXLINE,0);
@@ -233,6 +286,7 @@ void *process_request(void *i)
 				printf("Server did not find file\n");
 			}
 		}
+		*/
 	}
 	close(cfd);
 	printf("Done\n");
