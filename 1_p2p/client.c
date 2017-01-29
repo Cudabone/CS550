@@ -14,6 +14,7 @@
 #include "const.h"
 //TODO append .. to client servers to connect to
 
+//Function Prototypes
 int prompt(void);
 int prompt_receive(void);
 void read_filename(char *filename, int flag);
@@ -36,11 +37,11 @@ void retrieve(char *filename, char *peerid);
 //Client server and client client addr
 struct sockaddr_un csa;
 int csfd;
+//hostname for client server
 char hostname[HOSTNAMELENGTH];
 int main(int argc, char **argv)
 {
-	//Socket over IPv4
-	//sockfd = socket(AF_INET,SOCK_SEQPACKET,0);	
+	//Parse client server name
 	if(argc != 2)
 	{
 		printf("Usage: ./client clientid\n");
@@ -54,52 +55,63 @@ int main(int argc, char **argv)
 	strcpy(hostname,argv[1]);
 	printf("Hostname: %s\n",hostname);
 
-	//Create the threads for client and client-server
+	//Create the client server, socket file descriptor csfd
 	create_server();
+	//Create the threads for client and client-server
 	create_threads();
+	//close the server
+	unlink(csa.sun_path);
 	close(csfd);
 }
+/* User interface function which interacts with the central
+ * indexing server and retrieves files from other clients.
+ */
 void client_user(void)
 {
 	struct sockaddr_un sa;
 	int sfd;
-	//Socket over localhost
+	//Socket over localhost to central indexing server
 	sfd = socket(AF_UNIX,SOCK_STREAM,0);
 	if(sfd < 0)
 		perror("Socket");
 
-	//Set socket structure vars
+	//Set socket structure variables
 	int err;
 	memset(&sa,0,sizeof(sa));
 	sa.sun_family = AF_UNIX;
-	strcpy(sa.sun_path, "../SERV");
+	strcpy(sa.sun_path, "SERV");
+	//Connect to cental indexing server
 	err = connect(sfd,(const struct sockaddr *)&sa,sizeof(sa));
 	if(err < 0)
 		perror("Connect");
 
 	int cmd;
 	do{
+		//Get command from user
 		cmd = prompt();
 		char filename[MAXLINE];	
 		char peerid[HOSTNAMELENGTH];
 		char found[2];
 		int found_int;
 		switch(cmd){
+			//Register a file to the central indexing server
 			case 1: 
-				//register check
+				//Read filename from user
 				read_filename(filename,0);
 				//Send Server command #
 				send(sfd,"1",2,0);
-				//Send Server filename
+				//Send Server filename and hostname
 				send(sfd,(void *)filename,MAXLINE,0);
 				send(sfd,hostname,HOSTNAMELENGTH,0);
 				break;
+			//Do a lookup and then can retrieve
 			case 2: 
-				//do a lookup
+				//Read filename from user
 				read_filename(filename,1);
 				//Send Server command #
 				send(sfd,"2",2,0);
 				send(sfd,(void *)filename,MAXLINE,0);
+				//Read if server found the file
 				recv(sfd,(void *)found,2,0);
 				found_int = atoi(found);
 			 	if(found_int)	
@@ -119,13 +131,20 @@ void client_user(void)
 					printf("File does not exist on server\n");
 				}
 				break;
+			//Close the client
 			case 3:
 				break;
 		}
 	}while(cmd != 3);
 	unlink(sa.sun_path);
 	close(sfd);
+	//Close client server as well
+	unlink(csa.sun_path);
+	close(csfd);
 }
+/* Prompt the user for the command they would like to do,
+ * these include register, lookup/receive, and exit
+ */
 int prompt(void)
 {
 	int input;
@@ -139,10 +158,12 @@ int prompt(void)
 		printf("2: Look up / Retreive a file\n");
 		//printf("3: Retrieve a file\n");
 		printf("3: Exit\n");
+		//Read input
 		fgets(str,MAXLINE,stdin);
-		//Consume end of line character
+		//Parse input to integer
 		input = atoi(str);
-		if(input > 4 || input < 1 || input == 0)
+		//Ensure input number is valid
+		if(input > 3 || input < 1 || input == 0)
 		{
 			valid = 0;
 			printf("Invalid input, try again\n");
@@ -150,6 +171,9 @@ int prompt(void)
 	}while(!valid);
 	return input;
 }
+/* Prompt the user as to whether they want to receive, 
+ * then which user they want to receive from
+ */
 int prompt_receive(void)
 {
 	int input;
@@ -171,24 +195,38 @@ int prompt_receive(void)
 	return input;
 }
 //flag = 0 : Register, flag = 1 : Lookup
+/* Reads a filename from the user, can be called
+ * with two flags as to whether the read
+ * will correspond to registering a file or
+ * a lookup/receive.
+ */
 void read_filename(char *filename, int flag)
 {
 	FILE *file;
 	do{
 		printf("Enter the filename to lookup/register\n");
+		//Read input
 		fgets(filename,MAXLINE,stdin);
 		char *buf;
 		if((buf=strchr(filename,'\n')) != NULL)
 			*buf = '\0';
+		//If registering
 		if(flag == 0)
 		{
+			//Check to make sure we can open the file
 			file = fopen((const char *)filename,"r");
 			if(file == NULL)
 			{
 				printf("File does not exist!\n");
 			}
+			else
+			{
+				fclose(file);
+			}
+			//Close the file
 		}
 	}while(file == NULL && flag == 0);
+	//Close the file
 	//printf("\"%s\"\n",filename);
 }
 //Get the server name to retrieve
@@ -196,42 +234,52 @@ void read_server(char *server)
 {
 	printf("Enter the server\n");
 }
+/* Set up a server to retrieve from other client
+ * and receive the file filename from peerid
+ */
 void retrieve(char *filename, char *peerid)
 {
 	struct sockaddr_un sa;
 	int sfd;
+	//Create socket for client-client transaction
 	sfd = socket(AF_UNIX,SOCK_STREAM,0);
 	if(sfd < 0)
 		perror("Socket");
 
-	//Set socket structure vars
 	int err;
+	//Set socket structure variables
 	memset(&sa,0,sizeof(sa));
 	sa.sun_family = AF_UNIX;
 	strcpy(sa.sun_path, peerid);
+	//Connect to the other client
 	err = connect(sfd,(const struct sockaddr *)&sa,sizeof(sa));
 	if(err < 0)
 		perror("Connect");
 	char filesize[MAXFILESIZECHARS];
+	//Send client the file name wanted
 	send(sfd,(void *)filename,MAXLINE,0);
+	//Receive the filesize
 	recv(sfd,(void *)filesize,MAXFILESIZECHARS,0);
 	//File size and remaining bytes
 	int rem = atoi(filesize);
 	printf("file would be received here\n");
-	//send file size
-	//retrieve file
 	char buf[BUFFSIZE];
 	FILE *file = fopen(filename,"r+");
 	int recvb = 0;
+	//Write to a new file
 	while(((recvb = recv(sfd,buf,BUFFSIZE,0)) > 0) && (rem > 0))
 	{
 		fwrite(buf,sizeof(char),recvb,file);
 		rem -= recvb;
 	}
 	fclose(file);
-	unlink(sa.sun_path);
+	//unlink(sa.sun_path);
 	close(sfd);
 }
+/* Set up client server for sending files 
+ * socketfd = csfd 
+ * socket structure = csa 
+ */
 void create_server(void)
 {
 	//Create client server
@@ -264,6 +312,9 @@ void create_server(void)
 		exit(0);
 	}
 }
+/* Run the client file server to send files
+ * to other clients 
+ */
 void retrieve_server(void)
 {
 	struct sockaddr_un cca;
@@ -273,12 +324,19 @@ void retrieve_server(void)
 	//Send file
 	//End connection
 	socklen_t len = sizeof(cca);
+	//Loop
 	while(1)
 	{
 		printf("Server waiting for connection\n");
 		ccfd = accept(csfd,(struct sockaddr*)&cca,&len);
+		if(ccfd < 0)
+		{
+			close(ccfd);
+			return;
+		}
 		printf("Connected\n");
 		char filename[MAXLINE];
+		//Receive the filename, if no clients to accept, return
 		if(recv(ccfd,(void *)filename,MAXLINE,0) == 0)
 		{
 			close(ccfd);
@@ -288,6 +346,7 @@ void retrieve_server(void)
 
 		//Send file
 		printf("File would be sent here\n");
+		//Open the file
 		int fd = open(filename,O_RDONLY); 
 		if(fd < 0)
 		{
@@ -298,20 +357,27 @@ void retrieve_server(void)
 		struct stat filestat;
 		fstat(fd,&filestat);
 		char filesize[MAXFILESIZECHARS];
+		//Convert fstat filesize to string
 		sprintf(filesize, "%d",(int)filestat.st_size);
+		//Send the file size
 		send(ccfd,(void *)filesize,MAXFILESIZECHARS,0);
 		off_t len = 0;
+		//Send the entire file
 		if(sendfile(fd,ccfd,0,&len,NULL,0) < 0)
 		{
 			printf("Error sending file\n");
 			close(ccfd);
 			return;
 		}
-
+		//close file 
 		close(fd);
+		//close client connection
 		close(ccfd);
 	}
 }
+/* Create the threads which will execute client user and
+ * client server side as well as file checking
+ */
 void create_threads(void)
 {
 	//Create the n threads
@@ -322,8 +388,7 @@ void create_threads(void)
 	for(i = 0; i < NTHREADS; i++)
 	{
 		num[i] = i;
-		/* Call gauss with each thread and paremeter i which
-		 * will act like a rank in MPI */
+		//Create threads, and send their index in num using p
 		pthread_create(&threads[i],NULL,distribute_threads,p);
 		p++;
 	}
@@ -333,6 +398,10 @@ void create_threads(void)
 		pthread_join(threads[i],NULL);
 	}
 }
+/* Distributes the threads to their designated function,
+ * which includes client user, file checking, and the client
+ * server
+ */
 void *distribute_threads(void *i)
 {
 	int num = *((int *)i);
