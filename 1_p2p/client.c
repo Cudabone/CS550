@@ -1,4 +1,7 @@
 #include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <sys/uio.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <netinet/in.h>
@@ -9,6 +12,7 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include "const.h"
+//TODO append .. to client servers to connect to
 
 int prompt(void);
 int prompt_receive(void);
@@ -68,7 +72,7 @@ void client_user(void)
 	int err;
 	memset(&sa,0,sizeof(sa));
 	sa.sun_family = AF_UNIX;
-	strcpy(sa.sun_path, "SERV");
+	strcpy(sa.sun_path, "../SERV");
 	err = connect(sfd,(const struct sockaddr *)&sa,sizeof(sa));
 	if(err < 0)
 		perror("Connect");
@@ -208,9 +212,23 @@ void retrieve(char *filename, char *peerid)
 	err = connect(sfd,(const struct sockaddr *)&sa,sizeof(sa));
 	if(err < 0)
 		perror("Connect");
+	char filesize[MAXFILESIZECHARS];
 	send(sfd,(void *)filename,MAXLINE,0);
+	recv(sfd,(void *)filesize,MAXFILESIZECHARS,0);
+	//File size and remaining bytes
+	int rem = atoi(filesize);
 	printf("file would be received here\n");
+	//send file size
 	//retrieve file
+	char buf[BUFFSIZE];
+	FILE *file = fopen(filename,"r+");
+	int recvb = 0;
+	while(((recvb = recv(sfd,buf,BUFFSIZE,0)) > 0) && (rem > 0))
+	{
+		fwrite(buf,sizeof(char),recvb,file);
+		rem -= recvb;
+	}
+	fclose(file);
 	unlink(sa.sun_path);
 	close(sfd);
 }
@@ -262,12 +280,35 @@ void retrieve_server(void)
 		printf("Connected\n");
 		char filename[MAXLINE];
 		if(recv(ccfd,(void *)filename,MAXLINE,0) == 0)
+		{
+			close(ccfd);
 			return;
+		}
 		printf("Sending file: %s\n",filename);
 
 		//Send file
 		printf("File would be sent here\n");
+		int fd = open(filename,O_RDONLY); 
+		if(fd < 0)
+		{
+			printf("File couldnt be opened\n");
+			close(ccfd);
+			return;
+		}
+		struct stat filestat;
+		fstat(fd,&filestat);
+		char filesize[MAXFILESIZECHARS];
+		sprintf(filesize, "%d",(int)filestat.st_size);
+		send(ccfd,(void *)filesize,MAXFILESIZECHARS,0);
+		off_t len = 0;
+		if(sendfile(fd,ccfd,0,&len,NULL,0) < 0)
+		{
+			printf("Error sending file\n");
+			close(ccfd);
+			return;
+		}
 
+		close(fd);
 		close(ccfd);
 	}
 }
