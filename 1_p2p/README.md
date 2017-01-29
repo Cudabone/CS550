@@ -14,6 +14,7 @@ makedir c4
 ./setup.sh - will add files
 
 # Running Instructions
+Ensure const.h NUMCLIENTS set to the respective number of clients
 Run server first
 ./server
 Create a directory for each client
@@ -43,3 +44,9 @@ make
 ./client ../cl3
 Exit all clients normally with command 3: Exit
 Else may have to end server with killall or ctrl-c
+
+# Tests / Output files
+test0.txt - Terminal output from running 3 clients, one server
+In client.c, must #define TESTING. Uncomment it.
+test(1-4).txt - Output files which calculates average response time for 1 to 4
+clients.
