@@ -124,6 +124,7 @@ void client_user(void)
 				found_int = atoi(found);
 			 	if(found_int)	
 				{
+					printf("File found on server\n");
 					//send/recv from other client
 					//recv(sfd,(void *)peerid,HOSTNAMELENGTH,0);
 					//Receive number of peer file holders
@@ -215,7 +216,7 @@ int prompt_receive(int sfd, int numpeers,char *peerid)
 		printf("Select which peer to retrieve file from\n");
 		for(i = 0; i < numpeers; i++)
 		{
-			recv(sfd,(void *)peers[i],HOSTNAMELENGTH,0);	
+			recv(sfd,(void *)&peers[i][0],HOSTNAMELENGTH,0);	
 			printf("%d: %s\n",i,peers[i]);
 		}
 		do{

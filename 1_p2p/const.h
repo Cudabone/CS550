@@ -12,4 +12,4 @@
 #define BUFFSIZE 512
 //Number of bytes to hold number of clients to retrieve from
 //MAX = PEERRECVNUMCHARS*10^8. Now its 99999999
-#define PEERRECVNUMCHARS 1
+#define PEERRECVNUMCHARS 2

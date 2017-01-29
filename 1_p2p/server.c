@@ -222,6 +222,7 @@ void *process_request(void *i)
 				//Tell client we found file (Next message file name)
 				send(cfd,"1",2,0);
 				//send(cfd,(void *)temp,HOSTNAMELENGTH,0);
+				printf("Sending list\n");
 				sendlist(cfd,filename);
 				printf("Server found host %s has file\n",temp);
 			}
@@ -249,13 +250,16 @@ void sendlist(int cfd, char *filename)
 			count++;
 		}
 	}
-	sprintf(countstr,"%d",count);
+	printf("Found %d clients with file\n",count);
+	snprintf(countstr,PEERRECVNUMCHARS,"%d",count);
 	send(cfd,(void *)countstr,PEERRECVNUMCHARS,0);
+	printf("Sending clients\n");
 	for(i = 0; i < MAXFILES; i++)
 	{
 		if(files[i] != NULL && strcmp(files[i]->filename,filename) == 0)		
 		{
-			send(cfd,(void *)(files[i]->peerid),HOSTNAMELENGTH,0);
+			printf("Sending client for list: %s\n",files[i]->peerid);
+			send(cfd,(files[i]->peerid),HOSTNAMELENGTH,0);
 		}
 	}
 }
