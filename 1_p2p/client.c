@@ -11,13 +11,14 @@
 #include "const.h"
 
 int prompt(void);
-void read_filename(char *filename);
-void retrieve(char *filename);
+int prompt_receive(void);
+void read_filename(char *filename, int flag);
 void *distribute_threads(void *i);
 void create_threads(void);
 void retrieve_server(void);
 void create_server(void);
 void client_user(void);
+void retrieve(char *filename, char *peerid);
 
 /* NOTES
  * Threads: 1 thread for user
@@ -52,6 +53,7 @@ int main(int argc, char **argv)
 	//Create the threads for client and client-server
 	create_server();
 	create_threads();
+	close(csfd);
 }
 void client_user(void)
 {
@@ -80,7 +82,8 @@ void client_user(void)
 		int found_int;
 		switch(cmd){
 			case 1: 
-				read_filename(filename);
+				//register check
+				read_filename(filename,0);
 				//Send Server command #
 				send(sfd,"1",2,0);
 				//Send Server filename
@@ -88,7 +91,8 @@ void client_user(void)
 				send(sfd,hostname,HOSTNAMELENGTH,0);
 				break;
 			case 2: 
-				read_filename(filename);
+				//do a lookup
+				read_filename(filename,1);
 				//Send Server command #
 				send(sfd,"2",2,0);
 				send(sfd,(void *)filename,MAXLINE,0);
@@ -99,13 +103,19 @@ void client_user(void)
 					//send/recv from other client
 					recv(sfd,(void *)peerid,HOSTNAMELENGTH,0);
 					printf("Received peerid: %s\n",peerid);
+					int input = prompt_receive();
+					//Receive
+					if(input == 1)
+					{
+						retrieve(filename,peerid);				
+					}
 				}
 				else
 				{
 					printf("File does not exist on server\n");
 				}
 				break;
-			case 3: 
+			case 3:
 				break;
 		}
 	}while(cmd != 3);
@@ -123,11 +133,12 @@ int prompt(void)
 		printf("Enter the number for the desired command\n");
 		printf("1: Register a file to the server\n");
 		printf("2: Look up / Retreive a file\n");
+		//printf("3: Retrieve a file\n");
 		printf("3: Exit\n");
 		fgets(str,MAXLINE,stdin);
 		//Consume end of line character
 		input = atoi(str);
-		if(input > 3 || input < 1 || input == 0)
+		if(input > 4 || input < 1 || input == 0)
 		{
 			valid = 0;
 			printf("Invalid input, try again\n");
@@ -135,29 +146,57 @@ int prompt(void)
 	}while(!valid);
 	return input;
 }
-void read_filename(char *filename)
+int prompt_receive(void)
+{
+	int input;
+	int valid = 1;
+	char str[MAXLINE];
+
+	do{
+		printf("Retrieve from peer?\n");
+		printf("1: Yes\n");
+		printf("2: No\n");
+		fgets(str,MAXLINE,stdin);
+		input = atoi(str);
+		if(input != 1 && input != 2)
+		{
+			valid = 0;
+			printf("Invalid input, try again\n");
+		}
+	}while(!valid);
+	return input;
+}
+//flag = 0 : Register, flag = 1 : Lookup
+void read_filename(char *filename, int flag)
 {
 	FILE *file;
 	do{
-		printf("Enter the filename to register\n");
+		printf("Enter the filename to lookup/register\n");
 		fgets(filename,MAXLINE,stdin);
 		char *buf;
 		if((buf=strchr(filename,'\n')) != NULL)
 			*buf = '\0';
-		file = fopen((const char *)filename,"r");
-		if(file == NULL)
+		if(flag == 0)
 		{
-			printf("File does not exist!\n");
+			file = fopen((const char *)filename,"r");
+			if(file == NULL)
+			{
+				printf("File does not exist!\n");
+			}
 		}
-	}while(file == NULL);
+	}while(file == NULL && flag == 0);
 	//printf("\"%s\"\n",filename);
 }
-void retrieve(char *filename)
+//Get the server name to retrieve
+void read_server(char *server)
 {
-	struct sockaddr_un sa,ca;
-	int sfd,cfd;
+	printf("Enter the server\n");
+}
+void retrieve(char *filename, char *peerid)
+{
+	struct sockaddr_un sa;
+	int sfd;
 	sfd = socket(AF_UNIX,SOCK_STREAM,0);
-	cfd = socket(AF_UNIX,SOCK_STREAM,0);
 	if(sfd < 0)
 		perror("Socket");
 
@@ -165,34 +204,47 @@ void retrieve(char *filename)
 	int err;
 	memset(&sa,0,sizeof(sa));
 	sa.sun_family = AF_UNIX;
-	strcpy(sa.sun_path, "SERV");
+	strcpy(sa.sun_path, peerid);
 	err = connect(sfd,(const struct sockaddr *)&sa,sizeof(sa));
 	if(err < 0)
 		perror("Connect");
-
+	send(sfd,(void *)filename,MAXLINE,0);
+	printf("file would be received here\n");
+	//retrieve file
+	unlink(sa.sun_path);
+	close(sfd);
 }
 void create_server(void)
 {
 	//Create client server
 	csfd = socket(AF_UNIX,SOCK_STREAM,0);
 	if(csfd < 0)
+	{
 		perror("Socket");
+		exit(0);
+	}
 
 	//Set socket structure vars
-	int err;
 	memset(&csa,0,sizeof(csa));
 	csa.sun_family = AF_UNIX;
 	strcpy(csa.sun_path,hostname);
 	unlink(csa.sun_path);
 
+	int err;
 	err = bind(csfd,(struct sockaddr*)&csa,sizeof(csa));	
 	if(err < 0)
+	{
 		perror("Bind");
+		exit(0);
+	}
 	//Socket over localhost
 	//Listen for connections, maximum of 1 client (1 per thread)
-	err = listen(csfd,2);
+	err = listen(csfd,NUMCLIENTS-1);
 	if(err < 0)
+	{
 		perror("Listen");
+		exit(0);
+	}
 }
 void retrieve_server(void)
 {
@@ -202,22 +254,22 @@ void retrieve_server(void)
 	//Listen for connections
 	//Send file
 	//End connection
+	socklen_t len = sizeof(cca);
 	while(1)
 	{
-		socklen_t len = sizeof(cca);
 		printf("Server waiting for connection\n");
 		ccfd = accept(csfd,(struct sockaddr*)&cca,&len);
 		printf("Connected\n");
 		char filename[MAXLINE];
-		recv(ccfd,(void *)filename,MAXLINE,0);
+		if(recv(ccfd,(void *)filename,MAXLINE,0) == 0)
+			return;
 		printf("Sending file: %s\n",filename);
 
 		//Send file
+		printf("File would be sent here\n");
 
-		unlink(csa.sun_path);
 		close(ccfd);
 	}
-	close(csfd);
 }
 void create_threads(void)
 {
@@ -255,7 +307,7 @@ void *distribute_threads(void *i)
 			break;
 		default:
 			//retrieve server
-			//retrieve_server();
+			retrieve_server();
 			break;
 	}
 	return NULL;
