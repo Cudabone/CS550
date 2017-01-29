@@ -17,6 +17,7 @@ void *distribute_threads(void *i);
 void create_threads(void);
 void retrieve_server(void);
 void create_server(void);
+void client_user(void);
 
 /* NOTES
  * Threads: 1 thread for user
@@ -33,8 +34,6 @@ int csfd;
 char hostname[HOSTNAMELENGTH];
 int main(int argc, char **argv)
 {
-	struct sockaddr_un sa;
-	int sfd;
 	//Socket over IPv4
 	//sockfd = socket(AF_INET,SOCK_SEQPACKET,0);	
 	if(argc != 2)
@@ -52,8 +51,12 @@ int main(int argc, char **argv)
 
 	//Create the threads for client and client-server
 	create_server();
-	//create_threads();
-	
+	create_threads();
+}
+void client_user(void)
+{
+	struct sockaddr_un sa;
+	int sfd;
 	//Socket over localhost
 	sfd = socket(AF_UNIX,SOCK_STREAM,0);
 	if(sfd < 0)
@@ -220,33 +223,39 @@ void create_threads(void)
 {
 	//Create the n threads
 	pthread_t threads[NTHREADS];
-	int *i = NULL;
-	for(*i = 0; *i < NTHREADS; (*i)++)
+	int i;
+	int num[NTHREADS];
+	void *p = num;
+	for(i = 0; i < NTHREADS; i++)
 	{
+		num[i] = i;
 		/* Call gauss with each thread and paremeter i which
 		 * will act like a rank in MPI */
-		pthread_create(&threads[*i],NULL,distribute_threads,(void *)i);
+		pthread_create(&threads[i],NULL,distribute_threads,p);
+		p++;
 	}
 	/* Terminate all threads */
-	for(*i = 0; *i < NTHREADS; (*i)++)
+	for(i = 0; i < NTHREADS; i++)
 	{
-		pthread_join(threads[*i],NULL);
+		pthread_join(threads[i],NULL);
 	}
 }
 void *distribute_threads(void *i)
 {
-	int num = (int)i;
+	int num = *((int *)i);
+	//int *num = (int)*i;
 	switch(num)
 	{
 		case 0:
 			//Client user
+			client_user();
 			break;
 		case 1:
 			//File checking
 			break;
 		default:
 			//retrieve server
-			retrieve_server();
+			//retrieve_server();
 			break;
 	}
 	return NULL;

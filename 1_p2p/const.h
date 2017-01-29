@@ -1,3 +1,4 @@
 #define MAXLINE 1024
 #define HOSTNAMELENGTH 16
 #define NTHREADS 4
+#define NUMCLIENTS 3

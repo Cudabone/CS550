@@ -7,6 +7,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <pthread.h>
 #include "const.h"
 
 /*TODO:
@@ -26,19 +27,47 @@ int registry(const char *peerid, const char *filename);
 int remove_entry(const char *peerid, const char *filename);
 void free_list(void);
 void print_registry();
+void create_server(void);
+void *process_request(void *i);
 
+//Server socket info
+struct sockaddr_un sa;
+int sfd;
 int main(int argc, char **argv)
 {
+	create_server();
+
+	//Create threads
+	pthread_t threads[NUMCLIENTS];
+	int i;
+	for(i = 0; i < NUMCLIENTS; i++)
+	{
+		/* Call gauss with each thread and paremeter i which
+		 * will act like a rank in MPI */
+		pthread_create(&threads[i],NULL,process_request,NULL);
+	}
+	/* Terminate all threads */
+	for(i = 0; i < NUMCLIENTS; i++)
+	{
+		pthread_join(threads[i],NULL);
+	}
+	print_registry();
+	unlink(sa.sun_path);
+	close(sfd);
+	free_list();
 	//IPv4 AF_INET socket
 	//struct sockaddr_in sai;
 
 	//Local AF_UNIX socket
-	struct sockaddr_un sa,ca;
-	int sfd,cfd;
 
 	//Socket over IPv4
 	//sockfd = socket(AF_INET,SOCK_SEQPACKET,0);	
 	
+	//Socket over localhost
+
+}
+void create_server(void)
+{
 	//Socket over localhost
 	sfd = socket(AF_UNIX,SOCK_STREAM,0);
 	if(sfd < 0)
@@ -59,64 +88,10 @@ int main(int argc, char **argv)
 		perror("Bind");
 
 	//Listen for connections, maximum of 3 clients
-	err = listen(sfd,3);
+	err = listen(sfd,NUMCLIENTS);
 	if(err < 0)
 		perror("Listen");
 
-	socklen_t len = sizeof(ca);
-	printf("Server waiting for connection\n");
-	cfd = accept(sfd,(struct sockaddr*)&ca,&len);
-	printf("Connected\n");
-
-	while(1)
-	{
-		char cmdstr[2];
-		char filename[MAXLINE];
-		char peerid[HOSTNAMELENGTH];
-		//Receive command #
-		//1 = Register, 2 = lookup
-		printf("Waiting next command\n");
-
-		//TODO, ensure that when client closes, this does not loop, should try
-		//to accept again instead.
-		if(recv(cfd,(void *)cmdstr,2,0) == 0)
-			break;
-		printf("Received\n");
-		int cmd = atoi(cmdstr);
-		if(cmd == 1)
-		{
-			recv(cfd,(void *)filename,MAXLINE,0);
-			recv(cfd,(void *)peerid,HOSTNAMELENGTH,0);
-			printf("Calling Registry with filename: \"%s\"\n",filename);
-			registry(peerid,filename);
-		}
-		else if(cmd == 2)
-		{
-			recv(cfd,(void *)filename,MAXLINE,0);
-			printf("Calling Registry with filename: \"%s\"\n",filename);
-			char *temp = lookup(filename);
-			if(temp != NULL)
-			{
-				//Tell client we found file (Next message file name)
-				send(cfd,"1",2,0);
-				send(cfd,(void *)temp,HOSTNAMELENGTH,0);
-				printf("Server found host %s has file\n",temp);
-			}
-			else
-			{
-				//Tell client we did not find file
-				send(cfd,"0",2,0);
-				printf("Server did not find file\n");
-			}
-		}
-	}
-	printf("Done\n");
-	print_registry();
-	unlink(sa.sun_path);
-	close(sfd);
-	close(cfd);
-	free_list();
-	return 0;
 }
 /* 0 on success, -1 on failure: list full */
 int registry(const char *peerid, const char *filename)
@@ -185,4 +160,59 @@ void print_registry()
 			printf("File %d : %s | Client : %s\n",i,files[i]->filename,files[i]->peerid);
 		}
 	}
+}
+void *process_request(void *i)
+{
+	struct sockaddr_un ca;
+	int cfd;
+	socklen_t len = sizeof(ca);
+	printf("Server waiting for connection\n");
+	cfd = accept(sfd,(struct sockaddr*)&ca,&len);
+	printf("Connected\n");
+
+	while(1)
+	{
+		char cmdstr[2];
+		char filename[MAXLINE];
+		char peerid[HOSTNAMELENGTH];
+		//Receive command #
+		//1 = Register, 2 = lookup
+		printf("Waiting next command\n");
+
+		//TODO, ensure that when client closes, this does not loop, should try
+		//to accept again instead.
+		if(recv(cfd,(void *)cmdstr,2,0) == 0)
+			break;
+		printf("Received\n");
+		int cmd = atoi(cmdstr);
+		if(cmd == 1)
+		{
+			recv(cfd,(void *)filename,MAXLINE,0);
+			recv(cfd,(void *)peerid,HOSTNAMELENGTH,0);
+			printf("Calling Registry with filename: \"%s\"\n",filename);
+			registry(peerid,filename);
+		}
+		else if(cmd == 2)
+		{
+			recv(cfd,(void *)filename,MAXLINE,0);
+			printf("Calling Registry with filename: \"%s\"\n",filename);
+			char *temp = lookup(filename);
+			if(temp != NULL)
+			{
+				//Tell client we found file (Next message file name)
+				send(cfd,"1",2,0);
+				send(cfd,(void *)temp,HOSTNAMELENGTH,0);
+				printf("Server found host %s has file\n",temp);
+			}
+			else
+			{
+				//Tell client we did not find file
+				send(cfd,"0",2,0);
+				printf("Server did not find file\n");
+			}
+		}
+	}
+	close(cfd);
+	printf("Done\n");
+	return NULL;
 }
