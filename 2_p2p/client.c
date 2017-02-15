@@ -1,3 +1,5 @@
+#include <inttypes.h>
+#include <arpa/inet.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -36,12 +38,14 @@ void file_checker();
 //Client-Server connection
 //
 //Client server and client client addr
-struct sockaddr_un csa;
+struct sockaddr_in csa;
 int csfd;
 //hostname for client server
 char *files[MAXUSRFILES] = {NULL};
 char hostname[HOSTNAMELENGTH];
 char *peerlist[NUMCLIENTS] = {NULL};
+//Client server port
+in_port_t cs_port;
 //Parameter to close file checker
 int done = 0;
 int main(int argc, char **argv)
@@ -49,43 +53,52 @@ int main(int argc, char **argv)
 	//Parse client server name
 	if(argc != 2)
 	{
-		printf("Usage: ./client clientid\n");
+		printf("Usage: ./client <portno>\n");
 		return 1;
 	}
-	if(strlen(argv[1])+1 >= HOSTNAMELENGTH)
+	int port = atoi(argv[1]);
+	if(port < 0 || port > MAXPORT || strlen(argv[1]) > MAXPORTCHARS)
 	{
-		printf("Host name too large\n");
+		printf("Port number invalid: Range is between 0-65535 \n");
 		return 1;
 	}
+	cs_port = (in_port_t)atoi(argv[1]);
 	strcpy(hostname,argv[1]);
-	//printf("Hostname: %s\n",hostname);
+	//printf("Hostname (SERVPORT): %s\n",hostname);
 
+	
 	//Create the client server, socket file descriptor csfd
 	create_server();
+	
 	//Create the threads for client and client-server
-	create_threads();
+	client_user();
+	//create_threads();
 	//close the server
 	free_files();
-	unlink(csa.sun_path);
+	//unlink(csa.sun_path);
 	close(csfd);
+	
 }
 /* User interface function which interacts with the central
  * indexing server and retrieves files from other clients.
  */
 void client_user(void)
 {
-	struct sockaddr_un sa;
+	struct sockaddr_in sa;
 	int sfd;
 	//Socket over localhost to central indexing server
-	sfd = socket(AF_UNIX,SOCK_STREAM,0);
+	sfd = socket(AF_INET,SOCK_STREAM,0);
 	if(sfd < 0)
 		perror("Socket");
 
 	//Set socket structure variables
 	int err;
-	memset(&sa,0,sizeof(sa));
-	sa.sun_family = AF_UNIX;
-	strcpy(sa.sun_path, "../SERV");
+	//memset(&sa,0,sizeof(sa));
+	sa.sin_family = AF_INET;
+	sa.sin_port = htons(SERVPORT);
+	//Bind to 127.0.0.1 (Local)
+	sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
 	//Connect to cental indexing server
 	err = connect(sfd,(const struct sockaddr *)&sa,sizeof(sa));
 	if(err < 0)
@@ -198,10 +211,10 @@ void client_user(void)
 		}
 	}while(cmd != 3);
 	done = 1;
-	unlink(sa.sun_path);
+	//unlink(sa.sun_path);
 	close(sfd);
 	//Close client server as well
-	unlink(csa.sun_path);
+	//unlink(csa.sun_path);
 	close(csfd);
 }
 /* Prompt the user for the command they would like to do,
@@ -327,7 +340,7 @@ void read_filename(char *filename, int flag)
  */
 void file_checker()
 {
-	struct sockaddr_un sa;
+	struct sockaddr_in sa;
 	int sfd;
 	//printf("File checker running\n");
 	//Socket over localhost to central indexing server
@@ -338,8 +351,10 @@ void file_checker()
 	//Set socket structure variables
 	int err;
 	memset(&sa,0,sizeof(sa));
-	sa.sun_family = AF_UNIX;
-	strcpy(sa.sun_path, "../SERV");
+	sa.sin_family = AF_INET;
+	sa.sin_port = htons(SERVPORT);
+	//Bind to 127.0.0.1 (Local)
+	sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 	//Connect to cental indexing server
 	err = connect(sfd,(const struct sockaddr *)&sa,sizeof(sa));
 	if(err < 0)
@@ -385,7 +400,7 @@ void retrieve(char *filename, char *peerid)
 		printf("Cannot retrieve from self\n");
 		return;
 	}
-	struct sockaddr_un sa;
+	struct sockaddr_in sa;
 	int sfd;
 	//Create socket for client-client transaction
 	sfd = socket(AF_UNIX,SOCK_STREAM,0);
@@ -395,8 +410,8 @@ void retrieve(char *filename, char *peerid)
 	int err;
 	//Set socket structure variables
 	memset(&sa,0,sizeof(sa));
-	sa.sun_family = AF_UNIX;
-	strcpy(sa.sun_path, peerid);
+	//sa.sun_family = AF_UNIX;
+	//strcpy(sa.sun_path, peerid);
 	//Connect to the other client
 	err = connect(sfd,(const struct sockaddr *)&sa,sizeof(sa));
 	if(err < 0)
@@ -446,7 +461,7 @@ void retrieve(char *filename, char *peerid)
 void create_server(void)
 {
 	//Create client server
-	csfd = socket(AF_UNIX,SOCK_STREAM,0);
+	csfd = socket(AF_INET,SOCK_STREAM,0);
 	if(csfd < 0)
 	{
 		perror("Socket");
@@ -455,9 +470,11 @@ void create_server(void)
 
 	//Set socket structure vars
 	memset(&csa,0,sizeof(csa));
-	csa.sun_family = AF_UNIX;
-	strcpy(csa.sun_path,hostname);
-	unlink(csa.sun_path);
+	csa.sin_family = AF_INET;
+	csa.sin_port = htons(cs_port);
+	csa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	//strcpy(csa.sun_path,hostname);
+	//unlink(csa.sun_path);
 
 	int err;
 	err = bind(csfd,(struct sockaddr*)&csa,sizeof(csa));	
@@ -480,7 +497,7 @@ void create_server(void)
  */
 void retrieve_server(void)
 {
-	struct sockaddr_un cca;
+	struct sockaddr_in cca;
 	int ccfd;
 	//Set up server
 	//Listen for connections

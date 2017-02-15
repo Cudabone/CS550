@@ -36,12 +36,15 @@ void sendlist(int cfd, char *filename);
 void remove_all_entries(const char *peerid);
 
 //Server socket info
-struct sockaddr_un sa;
+struct sockaddr_in sa;
 int sfd;
 int main(int argc, char **argv)
 {
 	create_server();
+	process_request(NULL);
+	exit(0);
 
+	
 	//Create threads, two per client for user and file checker
 	pthread_t threads[NUMCLIENTS*2];
 	int i;
@@ -58,7 +61,7 @@ int main(int argc, char **argv)
 	}
 	//Print all registered files
 	print_registry();
-	unlink(sa.sun_path);
+	//unlink(sa.sun_path);
 	close(sfd);
 	//free all files
 	free_list();
@@ -67,15 +70,16 @@ int main(int argc, char **argv)
 void create_server(void)
 {
 	//Socket over localhost
-	sfd = socket(AF_UNIX,SOCK_STREAM,0);
+	sfd = socket(AF_INET,SOCK_STREAM,0);
 	if(sfd < 0)
 		perror("Socket");
 
 	//Set socket structure vars
 	memset(&sa,0,sizeof(sa));
-	sa.sun_family = AF_UNIX;
-	strcpy(sa.sun_path, "SERV");
-	unlink(sa.sun_path);
+	sa.sin_family = AF_INET;
+	sa.sin_port = htons(SERVPORT);
+	//Bind to 127.0.0.1 (Local)
+	sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 	/*
 	char *filename;
 	strncpy(sa.sun_path, filename, sizeof(sa.sun_path));
@@ -84,12 +88,18 @@ void create_server(void)
 	int err;
 	err = bind(sfd,(struct sockaddr*)&sa,sizeof(sa));	
 	if(err < 0)
+	{
 		perror("Bind");
+		exit(0);
+	}
 
 	//Listen for connections, maximum of numclients*2 clients
 	err = listen(sfd,NUMCLIENTS*2);
 	if(err < 0)
+	{
 		perror("Listen");
+		exit(0);
+	}
 
 }
 /* 0 on success, -1 on failure: list full */
@@ -205,7 +215,7 @@ void print_registry()
 void *process_request(void *i)
 {
 	//Create a socket addr for client
-	struct sockaddr_un ca;
+	struct sockaddr_in ca;
 	int cfd;
 	socklen_t len = sizeof(ca);
 	printf("Server waiting for connection\n");

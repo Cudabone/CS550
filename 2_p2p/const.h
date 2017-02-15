@@ -15,3 +15,6 @@
 #define PEERRECVNUMCHARS 2
 //Maximum files user can register
 #define MAXUSRFILES 10
+#define SERVPORT 10000
+#define MAXPORT 65535
+#define MAXPORTCHARS 5
