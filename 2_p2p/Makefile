@@ -3,11 +3,8 @@ CC = clang
 #Compiler Flags
 CFLAGS = -g -Wall
 
-all: server client 
+all: client 
 	@echo build complete
-
-server: server.c const.h
-	$(CC) $(CFLAGS) server.c -o server
 
 client: client.c const.h
 	$(CC) $(CFLAGS) client.c -o client
