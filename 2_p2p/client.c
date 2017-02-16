@@ -22,11 +22,12 @@
 //Function prototypes
 void add_file(char *filename);
 void free_files();
+void print_clients();
 int read_setup(char *filename);
 
 char *files[MAXUSRFILES] = {NULL};
 //Client port list
-char *clist[MAXCLIENTS];
+in_port_t clist[MAXCLIENTS] = {0};
 in_port_t cs_port;
 char hostport[MAXPORTCHARS+1];
 int main(int argc, char **argv)
@@ -38,15 +39,18 @@ int main(int argc, char **argv)
 		return 1;
 	}
 	int port = atoi(argv[1]);
-	printf("String length: %lu\n",strlen(argv[1]));
-	if(port < 0 || port > MAXPORT || strlen(argv[1]) > MAXPORTCHARS)
+	if(port < 1 || port > MAXPORT || strlen(argv[1]) > MAXPORTCHARS)
 	{
-		printf("Port number invalid: Range is between 0-65535 \n");
+		printf("Port number invalid: Range is between 1-65535 \n");
 		return 1;
 	}
 	cs_port = (in_port_t)atoi(argv[1]);
+	//printf("Read host port %d\n",cs_port);
 	//copy
 	strcpy(hostport,argv[1]);
+	if(!read_setup(argv[2]))
+		return 1;
+	print_clients();
 	free_files();
 }
 //flag = 0 : Register, flag = 1 : Lookup
@@ -109,10 +113,15 @@ void free_files()
 		if(files[i] != NULL)
 			free(files[i]);
 }
+/* Reads in the setup file specified when the client
+ * was executed. This contains the ports of neighboring
+ * clients. These ports are added to a list (clist)
+ */
 int read_setup(char *filename)
 {
 	FILE *file;
 	char *buf;
+	char port[MAXPORTCHARS+1];
 	if((buf=strchr(filename,'\n')) != NULL)
 		*buf = '\0';
 	//If registering
@@ -121,12 +130,31 @@ int read_setup(char *filename)
 	if(file == NULL)
 	{
 		printf("Setup file does not exist\n");
-		return -1;
+		return 0;
 	}
 	else
 	{
+		int i = 0;
 		//TODO File parsing here
+		while(fgets(port,MAXPORTCHARS+1,file))
+		{
+			if((buf = strchr(port,'\n')) != NULL)
+				*buf = '\0';
+			printf("Read port: %s\n",port);
+			clist[i] = (in_port_t)atoi(port);
+			i++;
+		}
 		fclose(file);
+		return 1;
 	}
-	return 0;
+}
+void print_clients()
+{
+	int i;
+	for(i = 0; i < MAXCLIENTS; i++)
+	{
+		if(clist[i] == 0)
+			break;
+		printf("Client %d: %d\n",i,clist[i]);
+	}
 }
