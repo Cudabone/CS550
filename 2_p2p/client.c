@@ -24,12 +24,17 @@ void add_file(char *filename);
 void free_files();
 void print_clients();
 int read_setup(char *filename);
+void create_server(void);
 
 char *files[MAXUSRFILES] = {NULL};
 //Client port list
 in_port_t clist[MAXCLIENTS] = {0};
 in_port_t cs_port;
 char hostport[MAXPORTCHARS+1];
+
+//Server socket info
+struct sockaddr_in sa;
+int sfd;
 int main(int argc, char **argv)
 {
 	//Parse client server port number
@@ -51,7 +56,43 @@ int main(int argc, char **argv)
 	if(!read_setup(argv[2]))
 		return 1;
 	print_clients();
+	create_server();
+
+	close(sfd);
 	free_files();
+	return 0;
+}
+//Create client server
+void create_server(void)
+{
+	//Socket over localhost
+	sfd = socket(AF_INET,SOCK_STREAM,0);
+	if(sfd < 0)
+		perror("Socket");
+
+	//Set socket structure vars
+	memset(&sa,0,sizeof(sa));
+	sa.sin_family = AF_INET;
+	sa.sin_port = htons(cs_port);
+	//Bind to 127.0.0.1 (Local)
+	sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	//Bind the server to path
+	int err;
+	err = bind(sfd,(struct sockaddr*)&sa,sizeof(sa));	
+	if(err < 0)
+	{
+		perror("Bind");
+		exit(0);
+	}
+
+	//Listen for connections, maximum of numclients*2 clients
+	err = listen(sfd,MAXCONNECTIONS);
+	if(err < 0)
+	{
+		perror("Listen");
+		exit(0);
+	}
+
 }
 //flag = 0 : Register, flag = 1 : Lookup
 /* Reads a filename from the user, can be called

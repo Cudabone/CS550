@@ -16,6 +16,11 @@
 //Maximum files user can register
 #define MAXUSRFILES 10
 #define SERVPORT 10000
+//Maximum port number
 #define MAXPORT 65535
+//Number of port characters
 #define MAXPORTCHARS 5
-#define MAXCLIENTS 65535
+//Maximum number of total clients (Range 1-65535)
+#define MAXCLIENTS 65535-1
+//Number of things for client to listen for
+#define MAXCONNECTIONS 2
