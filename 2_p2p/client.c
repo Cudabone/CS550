@@ -26,16 +26,30 @@ void print_clients();
 int read_setup(char *filename);
 void read_filename(char *filename, int flag);
 void create_server(void);
-void process_request(void);
+void *process_request(void *i);
 void *distribute_threads(void *i);
 int prompt(void);
 void create_threads(void);
+void initialize_list(in_port_t *pathlist);
+void add_client(in_port_t *pathlist);
 
 char *files[MAXUSRFILES] = {NULL};
 //Client port list
 in_port_t clist[MAXCLIENTS] = {0};
 in_port_t cs_port;
 char hostport[MAXPORTCHARS+1];
+
+
+typedef struct query
+{
+	int cmd;
+	char filename[MAXPATH];
+	in_port_t pathlist[TTL];
+	int pathindex;
+	int timetolive;
+	char found[2];
+} query;
+
 
 //Server socket info
 struct sockaddr_in csa;
@@ -68,8 +82,10 @@ int main(int argc, char **argv)
 	free_files();
 	return 0;
 }
-void process_request()
+//Process a request from a client, or client file checker
+void *process_request(void *i)
 {
+	//Create a socket addr for client
 	struct sockaddr_in ca;
 	int cfd;
 	socklen_t len = sizeof(ca);
@@ -77,24 +93,82 @@ void process_request()
 	cfd = accept(csfd,(struct sockaddr*)&ca,&len);
 	printf("Connected\n");
 
-	char cmdstr[2];
-	char filename[MAXLINE];
-	char peerid[HOSTNAMELENGTH];
-	//Receive command #
-	//1 = Register, 2 = lookup
-	printf("Waiting next command\n");
+	//Loop until all clients disconnected
+	while(1)
+	{
+		size_t querysize = sizeof(query);
+		query *q = malloc(querysize);
+		//Receive command #
+		//1 = Register, 2 = lookup
+		printf("Waiting next query\n");
 
-	//Receive command from client to perform
-	if(recv(cfd,(void *)cmdstr,2,0) == 0)
-		return;
-	printf("Received\n");
-
-	//convert to integer
-	int cmd = atoi(cmdstr);
-	printf("Received Command %d\n",cmd);
+		//Receive command from client to perform
+		if(recv(cfd,(void *)q,querysize,0) == 0)
+			break;
+		printf("Received query\n");
+		//convert to integer
+		int cmd = q->cmd;
+		printf("Received command: %d\n",cmd);
+		switch(cmd)
+		{
+			//Register file for client
+			case 1:	
+				//Get file name and peerid(hostname)
+				recv(cfd,(void *)filename,MAXLINE,0);
+				recv(cfd,(void *)peerid,HOSTNAMELENGTH,0);
+				printf("Calling Registry with filename: \"%s\"\n",filename);
+				//Register the file 
+				registry(peerid,filename);
+				break;
+			//Lookup file for client
+			case 2:
+				//Get file name from client
+				recv(cfd,(void *)filename,MAXLINE,0);
+				printf("Calling Registry with filename: \"%s\"\n",filename);
+				//Check if file is held in registry
+				char *temp = lookup(filename);
+				//If file found
+				if(temp != NULL)
+				{
+					//Tell client we found file (Next message file name)
+					send(cfd,"1",2,0);
+					//send(cfd,(void *)temp,HOSTNAMELENGTH,0);
+					printf("Sending list\n");
+					sendlist(cfd,filename);
+					//printf("Server found host %s has file\n",temp);
+				}
+				//If file not found
+				else
+				{
+					//Tell client we did not find file
+					send(cfd,"0",2,0);
+					printf("Server did not find file\n");
+				}
+				break;
+			//Client closing, unregister all files
+			case 3:
+				//Get client peerid to remove all files
+				recv(cfd,(void *)peerid,HOSTNAMELENGTH,0);
+				printf("Removing all entries for peerid %s\n",peerid);
+				//remove all files for peerid
+				remove_all_entries(peerid);
+				break;
+			//Called by client file checker when file gone
+			case 4:
+				printf("Server called to remove file\n");
+				//Get file name and peerid
+				recv(cfd,(void *)filename,MAXLINE,0);
+				recv(cfd,(void *)peerid,HOSTNAMELENGTH,0);
+				//Remove the entry for the file
+				remove_entry(peerid,filename);
+				printf("Removing file %s, file removed from client %s\n",filename,peerid);
+				break;
+		}
+	}
 	//Close the connection
 	close(cfd);
 	printf("Done\n");
+	return NULL;
 }
 /* User interface function which interacts with the central
  * indexing server and retrieves files from other clients.
@@ -112,7 +186,6 @@ void client_user(void)
 	int err;
 	//memset(&sa,0,sizeof(sa));
 	sa.sin_family = AF_INET;
-	sa.sin_port = htons(clist[0]);
 	//Bind to 127.0.0.1 (Local)
 	sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 
@@ -120,53 +193,9 @@ void client_user(void)
 	err = connect(sfd,(const struct sockaddr *)&sa,sizeof(sa));
 	if(err < 0)
 		perror("Connect");
-
-	#ifdef TESTING
-	printf("Testing 1000 sequential requests\n");
-
-	/* Timing code privided by Dr.Sun in CS546*/
-
-	/* Timing variables */
-	struct timeval etstart, etstop;  /* Elapsed times using gettimeofday() */
-	struct timezone tzdummy;
-	clock_t etstart2, etstop2;	/* Elapsed times using times() */
-	unsigned long long usecstart, usecstop;
-	struct tms cputstart, cputstop;  /* CPU times for my processes */
-	//Start clock
-	gettimeofday(&etstart, &tzdummy);
-	etstart2 = times(&cputstart);
-	int i;
-	for(i = 0; i < 1000;i++)
-	{
-		//Do a lookup request
-		//Send Server command #
-		char found[2];
-		int found_int;
-		char *filename = "testing.txt";
-		send(sfd,"2",2,0);
-		send(sfd,(void *)filename,MAXLINE,0);
-		//Read if server found the file
-		recv(sfd,(void *)found,2,0);
-		found_int = atoi(found);
-	}
-	gettimeofday(&etstop, &tzdummy);
-	etstop2 = times(&cputstop);
-	usecstart = (unsigned long long)etstart.tv_sec * 1000000 + etstart.tv_usec;
-	usecstop = (unsigned long long)etstop.tv_sec * 1000000 + etstop.tv_usec;
-	/* Display timing results */
-	//Divide to by 1000 to get milliseconds, and and another thousand for the
-	//requests
-	printf("\nAvg Response time = %g ms.\n",(float)(usecstop - usecstart)/(float)(1000*1000));
-	done = 1;
-	unlink(sa.sun_path);
-	close(sfd);
-	//Close client server as well
-	unlink(csa.sun_path);
-	close(csfd);
-	return;
-	#endif
 	
 	int cmd;
+	do{
 		//Get command from user
 		cmd = prompt();
 		char filename[MAXLINE];	
@@ -175,71 +204,54 @@ void client_user(void)
 		int numpeersint;
 		char found[2];
 		int found_int;
-		switch(cmd)
-		{
-			case 1:
-				send(sfd,"1",2,0);
-				break;
-			case 2:
-				send(sfd,"2",2,0);
-				break;
-			case 3: 
-				send(sfd,"3",2,0);
-		}
-		/*
 		switch(cmd){
-			//Register a file to the central indexing server
+			//Register a file
 			case 1: 
 				//Read filename from user
 				read_filename(filename,0);
-				//Send Server command #
-				send(sfd,"1",2,0);
-				break;
-				//Send Server filename and hostname
-				send(sfd,(void *)filename,MAXLINE,0);
-				//send(sfd,hostname,HOSTNAMELENGTH,0);
 				add_file(filename);
 				break;
 			//Do a lookup and then can retrieve
 			case 2: 
 				//Read filename from user
 				read_filename(filename,1);
-				//Send Server command #
-				send(sfd,"2",2,0);
-				send(sfd,(void *)filename,MAXLINE,0);
-				//Read if server found the file
-				recv(sfd,(void *)found,2,0);
-				found_int = atoi(found);
-			 	if(found_int)	
+				query q;
+				size_t querysize = sizeof(query);
+
+				//Initialize query request
+				initialize_list(q.pathlist);
+				q.cmd = 1;
+				q.timetolive = TTL;
+				strcpy(q.found,"1");
+				strcpy(q.filename,filename);
+				add_client(q.pathlist);
+
+				int i;
+				for(i = 0; i < MAXCLIENTS; i++)
 				{
-					printf("File found on server\n");
-					//send/recv from other client
-					//recv(sfd,(void *)peerid,HOSTNAMELENGTH,0);
-					//Receive number of peer file holders
-					recv(sfd,(void *)numpeers,PEERRECVNUMCHARS,0);
-					//Convert it to an integer
-					numpeersint = atoi(numpeers);
-					//printf("Received peerid: %s\n",peerid);
-					//int input = prompt_receive(sfd,numpeersint,peerid);
-					//Receive
-					if(input == 1)
+					if(clist[i] == 0)
 					{
-						retrieve(filename,peerid);				
+						printf("Gone through entire client list\n");
+						break;
 					}
+					//Start request to each server
+					sa.sin_port = htons(clist[i]);
+					err = connect(sfd,(const struct sockaddr *)&sa,sizeof(sa));
+					if(err < 0)
+						perror("Connect");
+					send(sfd,(void *)&q,querysize,0);
+
+					//TODO
+					//Wait for response whether file found here
 				}
-				else
-				{
-					printf("File does not exist on server\n");
-				}
-				break;
 			//Close the client, unregister all files
 			case 3:
 				send(sfd,"3",2,0);	
-				//send(sfd,(void *)hostname,HOSTNAMELENGTH,0);
+				send(sfd,(void *)hostname,HOSTNAMELENGTH,0);
 				break;
 		}
-		*/
-	//done = 1;
+	}while(cmd != 3);
+	done = 1;
 	//unlink(sa.sun_path);
 	close(sfd);
 	//Close client server as well
@@ -346,6 +358,25 @@ void read_filename(char *filename, int flag)
 	//Close the file
 	//printf("\"%s\"\n",filename);
 }
+void initialize_list(int *pathlist)
+{
+	int i;
+	for(i = 0; i < TTL; i++)
+	{
+		pathlist[i] = 0;
+	}
+}
+void add_client(in_port_t *pathlist)
+{
+	int i;
+	for(i = 0; i < TTL; i++)
+	{
+		if(pathlist[i] == 0)
+			pathlist[i] = cs_port;
+		else if(i == TTL-1)
+			printf("Path list full\n");
+	}
+}
 /* Adds a file to this clients file listing */
 void add_file(char *filename)
 {
@@ -358,6 +389,8 @@ void add_file(char *filename)
 			strcpy(files[i],filename);
 			break;
 		}
+		else if(i == MAXUSRFILES-1)
+			printf("File list full\n");
 	}
 }
 /* Frees all files from file listing for this client */

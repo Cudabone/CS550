@@ -24,3 +24,5 @@
 #define MAXCLIENTS 65535-1
 //Number of things for client to listen for
 #define MAXCONNECTIONS 2
+#define MAXPATH 260
+#define TTL 25
