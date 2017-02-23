@@ -32,6 +32,8 @@ int prompt(void);
 void create_threads(void);
 void initialize_list(in_port_t *pathlist);
 void add_client(in_port_t *pathlist);
+void to_string(int val,char *string);
+int to_int(char *string);
 
 char *files[MAXUSRFILES] = {NULL};
 //Client port list
@@ -198,12 +200,19 @@ void client_user(void)
 	do{
 		//Get command from user
 		cmd = prompt();
-		char filename[MAXLINE];	
+		char filename[MAXLINE];
 		char peerid[HOSTNAMELENGTH];
+		char recvports[MAXCLIENTS][MAXPORTCHARS+1];
 		char numpeers[PEERRECVNUMCHARS];
 		int numpeersint;
 		char found[2];
 		int found_int;
+
+		//Initialize port list to 0;
+		int j;
+		for(j = 0; j < MAXCLIENTS; j++)
+			strcpy(recvports[j],"0");
+
 		switch(cmd){
 			//Register a file
 			case 1: 
@@ -239,7 +248,33 @@ void client_user(void)
 					err = connect(sfd,(const struct sockaddr *)&sa,sizeof(sa));
 					if(err < 0)
 						perror("Connect");
-					send(sfd,(void *)&q,querysize,0);
+					//Send Lookup Command and filename
+					send(sfd,"1",2,0);
+					send(sfd,filename,MAXLINE,0);
+
+					printf("Waiting for peers to respond...\n"); 
+					
+					//Receive number of peers with file 
+					recv(sfd,(void *)numpeers,PEERRECVNUMCHARS,0); 
+					numpeersint = to_int(numpeers); 
+					printf("Found %d peers with file\n",numpeersint);
+
+					int temp;
+					for(temp = 0; temp < numpeersint; temp++)
+					{
+						char portno[MAXPORTCHARS+1];
+						//Receive port of each available client with file
+						recv(sfd,(void *)portno,MAXPORTCHARS+1,0);
+						int j;
+						for(j = 0; j < MAXCLIENTS; j++)
+						{
+							if(strcmp(recvports[j],"0") == 0)
+							{
+								strcpy(recvports[j],portno);
+								break;
+							}
+						}
+					}
 
 					//TODO
 					//Wait for response whether file found here
@@ -400,6 +435,27 @@ void free_files()
 	for(i = 0; i < MAXUSRFILES;i++)
 		if(files[i] != NULL)
 			free(files[i]);
+}
+int file_check(char *filename)
+{
+	int i;
+	for(i = 0; i < MAXUSRFILES;i++)
+	{
+		if(files[i] != NULL)
+		{
+			if(strcmp(filename,files[i]) == 0)	
+				return 1;
+		}
+	}
+	return 0;
+}
+void to_string(int val,char *string)
+{
+	sprintf(string,"%d",val);	
+}
+int to_int(char *string)
+{
+	return atoi(string);
 }
 /* Reads in the setup file specified when the client
  * was executed. This contains the ports of neighboring

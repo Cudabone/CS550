@@ -12,7 +12,7 @@
 #define BUFFSIZE 512
 //Number of bytes to hold number of clients to retrieve from
 //MAX = PEERRECVNUMCHARS*10^8. Now its 99999999
-#define PEERRECVNUMCHARS 2
+#define PEERRECVNUMCHARS 11
 //Maximum files user can register
 #define MAXUSRFILES 10
 #define SERVPORT 10000
