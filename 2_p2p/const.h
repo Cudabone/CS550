@@ -21,7 +21,7 @@
 //Number of port characters
 #define MAXPORTCHARS 5
 //Maximum number of total clients (Range 1-65535)
-#define MAXCLIENTS 65535-1
+#define MAXCLIENTS 1000 
 //Number of things for client to listen for
 #define MAXCONNECTIONS 2
 #define MAXPATH 260

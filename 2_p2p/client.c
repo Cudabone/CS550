@@ -26,14 +26,15 @@ void print_clients();
 int read_setup(char *filename);
 void read_filename(char *filename, int flag);
 void create_server(void);
-void *process_request(void *i);
+void *process_request();
 void *distribute_threads(void *i);
 int prompt(void);
 void create_threads(void);
-void initialize_list(in_port_t *pathlist);
+//void initialize_list(in_port_t *pathlist);
 void add_client(in_port_t *pathlist);
 void to_string(int val,char *string);
 int to_int(char *string);
+int prompt_receive(int numpeers,char *peerid,char recvports[MAXCLIENTS][MAXPORTCHARS+1]);
 
 char *files[MAXUSRFILES] = {NULL};
 //Client port list
@@ -42,6 +43,7 @@ in_port_t cs_port;
 char hostport[MAXPORTCHARS+1];
 
 
+/*
 typedef struct query
 {
 	int cmd;
@@ -51,6 +53,7 @@ typedef struct query
 	int timetolive;
 	char found[2];
 } query;
+*/
 
 
 //Server socket info
@@ -85,7 +88,7 @@ int main(int argc, char **argv)
 	return 0;
 }
 //Process a request from a client, or client file checker
-void *process_request(void *i)
+void *process_request()
 {
 	//Create a socket addr for client
 	struct sockaddr_in ca;
@@ -201,10 +204,10 @@ void client_user(void)
 		//Get command from user
 		cmd = prompt();
 		char filename[MAXLINE];
-		char peerid[HOSTNAMELENGTH];
+		char peerid[MAXPORTCHARS+1];
 		char recvports[MAXCLIENTS][MAXPORTCHARS+1];
 		char numpeers[PEERRECVNUMCHARS];
-		int numpeersint;
+		int numpeersint = 0;
 		char found[2];
 		int found_int;
 
@@ -224,6 +227,7 @@ void client_user(void)
 			case 2: 
 				//Read filename from user
 				read_filename(filename,1);
+				/*
 				query q;
 				size_t querysize = sizeof(query);
 
@@ -234,6 +238,7 @@ void client_user(void)
 				strcpy(q.found,"1");
 				strcpy(q.filename,filename);
 				add_client(q.pathlist);
+				*/
 
 				int i;
 				for(i = 0; i < MAXCLIENTS; i++)
@@ -256,37 +261,45 @@ void client_user(void)
 					
 					//Receive number of peers with file 
 					recv(sfd,(void *)numpeers,PEERRECVNUMCHARS,0); 
-					numpeersint = to_int(numpeers); 
-					printf("Found %d peers with file\n",numpeersint);
-
-					int temp;
-					for(temp = 0; temp < numpeersint; temp++)
+					numpeersint += to_int(numpeers); 
+					printf("Found %d more peers with file\n",numpeersint);
+					//If there are peers to recv from
+					if(numpeersint != 0)
 					{
-						char portno[MAXPORTCHARS+1];
-						//Receive port of each available client with file
-						recv(sfd,(void *)portno,MAXPORTCHARS+1,0);
-						int j;
-						for(j = 0; j < MAXCLIENTS; j++)
+						int temp;
+						for(temp = 0; temp < numpeersint; temp++)
 						{
-							if(strcmp(recvports[j],"0") == 0)
+							char portno[MAXPORTCHARS+1];
+							//Receive port of each available client with file
+							recv(sfd,(void *)portno,MAXPORTCHARS+1,0);
+							int j;
+							for(j = 0; j < MAXCLIENTS; j++)
 							{
-								strcpy(recvports[j],portno);
-								break;
+								if(strcmp(recvports[j],"0") == 0)
+								{
+									strcpy(recvports[j],portno);
+									break;
+								}
 							}
 						}
 					}
-
-					//TODO
-					//Wait for response whether file found here
 				}
+				printf("Found %d total peers with file\n",numpeersint);
+				int recv;
+				recv = prompt_receive(numpeersint,peerid,recvports);
+				//Call recv file here
+				if(recv)
+				{
+
+				}
+				//TODO choose peer here and begin file transfer
 			//Close the client, unregister all files
 			case 3:
-				send(sfd,"3",2,0);	
-				send(sfd,(void *)hostname,HOSTNAMELENGTH,0);
+				//TODO we can spread word to close all servers
 				break;
 		}
 	}while(cmd != 3);
-	done = 1;
+	//done = 1;
 	//unlink(sa.sun_path);
 	close(sfd);
 	//Close client server as well
@@ -321,6 +334,59 @@ int prompt(void)
 			printf("Invalid input, try again\n");
 		}
 	}while(!valid);
+	return input;
+}
+/* Prompt the user as to whether they want to receive, 
+ * then which user they want to receive from
+ * Return: 0 if not receiving, 1 if receiving
+ */
+int prompt_receive(int numpeers,char *peerid,char recvports[MAXCLIENTS][MAXPORTCHARS+1])
+{
+	int valid = 1;
+	//char peers[NUMCLIENTS][HOSTNAMELENGTH];
+	int input;
+    //recvports[MAXCLIENTS][MAXPORTCHARS+1];
+
+	do{
+		valid = 1;
+		char str[MAXLINE];
+		printf("Retrieve from a peer?\n");
+		printf("1: Yes\n");
+		printf("2: No\n");
+		fgets(str,MAXLINE,stdin);
+		input = atoi(str);
+		if(input != 1 && input != 2)
+		{
+			valid = 0;
+			printf("Invalid input, try again\n");
+		}
+	}while(!valid);
+	//If want to retrieve
+	int peernum;
+	if(input == 1)
+	{
+		//Choose which peer
+		int i;
+		printf("Select which peer to retrieve file from\n");
+		for(i = 0; i < numpeers; i++)
+		{
+			printf("%d: port %s\n",i,recvports[i]);
+		}
+		do{
+			valid = 1;
+			char str[MAXLINE];
+			fgets(str,MAXLINE,stdin);
+			peernum = atoi(str);
+			//printf("Numpeers: %d, Peernum chosen: %d\n",numpeers,peernum);
+			if(peernum < 0 || peernum > numpeers)
+			{
+				valid = 0;
+				printf("Invalid input, try again\n");
+			}
+		}while(!valid);
+		strcpy(peerid,recvports[peernum]);
+		printf("Selected peerid: %s\n",peerid);
+	}
 	return input;
 }
 //Create client server
@@ -393,7 +459,8 @@ void read_filename(char *filename, int flag)
 	//Close the file
 	//printf("\"%s\"\n",filename);
 }
-void initialize_list(int *pathlist)
+/*
+void initialize_list(in_port_t *pathlist)
 {
 	int i;
 	for(i = 0; i < TTL; i++)
@@ -401,6 +468,7 @@ void initialize_list(int *pathlist)
 		pathlist[i] = 0;
 	}
 }
+*/
 void add_client(in_port_t *pathlist)
 {
 	int i;
