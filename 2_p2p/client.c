@@ -20,6 +20,10 @@
 #include <uuid/uuid.h>
 #include <assert.h>
 
+//TODO list
+//-Implement TTL
+//-Implement file_checking
+//-Ensure never sending it to original query sender
 //Function prototypes
 void add_file(char *filename);
 void free_files();
@@ -45,12 +49,14 @@ void add_port(in_port_t port, in_port_t plist[MAXPORTLIST]);
 int file_check(char *filename);
 void send_file(int cfd);
 void retrieve(int sfd, char *filename);
+void file_checker();
 
 char *files[MAXUSRFILES] = {NULL};
 //Client port list
 in_port_t clist[MAXCLIENTS] = {0};
 in_port_t cs_port;
 char hostport[MAXPORTCHARS+1];
+int done = 0;
 
 //Each query has a uuid (universally unique identifier) and an upstream port
 typedef struct query
@@ -142,6 +148,9 @@ void *process_request()
 		char recvports[MAXCLIENTS][MAXPORTCHARS+1];
 		int numpeersint = 0;
 		char numpeers[PEERRECVNUMCHARS];
+		int ttlval;
+		char ttlstr[TTLCHARS];
+		in_port_t up_port = ntohs(ca.sin_port);
 
 		struct sockaddr_in sa;
 		int sfd;
@@ -169,9 +178,18 @@ void *process_request()
 		//convert to integer
 		int cmd = to_int(cmdstr);
 		printf("Received command: %d\n",cmd);
+
 		//Recv uuid of msg
 		recv(cfd,ustr,sizeof(uuid_string_t),0);
 		uuid_parse(ustr,uuid);
+
+		//Recv ttl value and decrement
+		recv(cfd,ttlstr,TTLCHARS,0);
+		ttlval = to_int(ttlstr);
+		ttlval--;
+		char newttlstr[TTLCHARS];
+		to_string(ttlval,newttlstr);
+		
 		printf("Received message with UUID: %s\n",ustr);
 		switch(cmd)
 		{
@@ -185,11 +203,39 @@ void *process_request()
 					//Dont forward
 					//remove_query(uuid);		
 					//Send not found none
-					send(cfd,"0",2,0);
+					char numpeersout[PEERRECVNUMCHARS] = {"0"};
+					send(cfd,numpeersout,PEERRECVNUMCHARS,0);
+					//remove_query(uuid);
+				}
+				else if(ttlval == 0)
+				{
+					add_query(uuid,up_port);
+					//Only check self for file
+					if(file_check(filename) == 1)
+					{
+						numpeersint++;
+						assert(numpeersint == 1);
+						char portno[MAXPORTCHARS+1];
+						to_string(cs_port,portno);
+						char numpeersout[PEERRECVNUMCHARS] = {"0"};
+						to_string(numpeersint,numpeersout);
+						send(cfd,numpeersout,PEERRECVNUMCHARS,0);
+						send(cfd,portno,MAXPORTCHARS+1,0);
+					}
+					//We dont have the file
+					else
+					{
+						//Send that we nor anyone else has the file
+						char numpeersout[PEERRECVNUMCHARS] = {"0"};
+						send(cfd,numpeersout,PEERRECVNUMCHARS,0);
+					}
+					remove_query(uuid);
 				}
 				//Forward check to all client if not handled already
 				else
 				{
+					printf("Adding query, uuid: %s\n",ustr);
+					add_query(uuid,up_port);
 					if(file_check(filename) == 1)				
 					{
 						numpeersint++;
@@ -216,6 +262,7 @@ void *process_request()
 						//Send Lookup Command and filename
 						send(sfd,"1",2,0);
 						send(sfd,(void *)ustr,sizeof(uuid_string_t),0);
+						send(sfd,ttlstr,TTLCHARS,0);
 						send(sfd,filename,MAXLINE,0);
 
 						printf("Waiting for peers to respond...\n"); 
@@ -261,6 +308,7 @@ void *process_request()
 					}
 					assert(numpeersint == j+1);
 					//remove query
+					printf("Removing query, uuid: %s\n",ustr);
 					remove_query(uuid);
 				}
 				break;
@@ -335,6 +383,9 @@ void client_user(void)
 		int numpeersint = 0;
 		char found[2];
 		int found_int;
+		int ttlval = TTL;
+		char ttlstr[TTLCHARS];
+		to_string(ttlval,ttlstr);
 
 		//Initialize port list to 0;
 		int j;
@@ -389,6 +440,7 @@ void client_user(void)
 					//Send Lookup Command and filename
 					send(sfd,"1",2,0);
 					send(sfd,(void *)ustr,sizeof(uuid_string_t),0);
+					send(sfd,ttlstr,TTLCHARS,0);
 					send(sfd,filename,MAXLINE,0);
 
 					printf("Waiting for peers to respond...\n"); 
@@ -441,7 +493,7 @@ void client_user(void)
 				break;
 		}
 	}while(cmd != 3);
-	//done = 1;
+	done = 1;
 	//unlink(sa.sun_path);
 	close(sfd);
 	//Close client server as well
@@ -736,15 +788,19 @@ in_port_t find_query_port(uuid_t uuid)
 void remove_query(uuid_t uuid)
 {
 	int i; 
+	int found = 0;
 	for(i = 0; i < MAXQUERIES; i++)
 	{
 		if(qlist[i] != NULL && uuid_compare(uuid,qlist[i]->uuid) == 0)
 		{
+			found = 1;
 			free(qlist[i]);
 			qlist[i] = NULL;
 			break;
 		}
 	}
+	if(found)
+		printf("Found query in list\n");
 }
 int have_query(uuid_t uuid)
 {
@@ -913,13 +969,41 @@ void *distribute_threads(void *i)
 			break;
 		case 1:
 			//File checking
-			//file_checker();
-			process_request();
+			file_checker();
 			break;
 		default:
+			process_request();
 			//retrieve server
 			//retrieve_server();
 			break;
 	}
 	return NULL;
+}
+/* Checks if any registered files from client were moved
+ * or can no longer be opened. If so remove from central
+ * indexing server
+ */
+void file_checker()
+{
+	int i;
+	while(!done)
+	{
+		FILE *file;
+		for(i = 0; i < MAXUSRFILES; i++)
+		{
+			if(files[i] != NULL)	
+			{
+				file = fopen((const char *)files[i],"r");
+				if(file == NULL)
+				{
+					printf("File %s moved or deleted: Updating list\n",files[i]);
+					//Tell server to remove from list, if available
+					free(files[i]);
+					files[i] = NULL;
+				}
+				else
+					fclose(file);
+			}
+		}
+	}
 }

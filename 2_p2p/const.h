@@ -5,7 +5,8 @@
 //Number of clients
 #define NUMCLIENTS 3
 //Number of threads for client, minimum = 3
-#define NTHREADS NUMCLIENTS+2
+//Need two threads for self, one for every other client
+#define NTHREADS NUMCLIENTS+1
 //File size significant digits; Ex 1024 = 4
 #define MAXFILESIZECHARS 256
 //Size of file transfer chunk
@@ -25,7 +26,9 @@
 //Number of things for client to listen for
 #define MAXCONNECTIONS 2
 #define MAXPATH 260
-#define TTL 25
+//TTL Range 1-100
+#define TTL 5
+#define TTLCHARS 4
 //Maximum number of queries client can handle at one time
 #define MAXQUERIES NUMCLIENTS
 #define MAXPORTLIST 1000
