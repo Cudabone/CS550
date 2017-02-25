@@ -18,7 +18,7 @@
 #include <time.h>
 #include "const.h"
 #include <uuid/uuid.h>
-
+#include <assert.h>
 
 //Function prototypes
 void add_file(char *filename);
@@ -43,6 +43,8 @@ void remove_query(uuid_t uuid);
 in_port_t find_query_port(uuid_t uuid);
 void add_port(in_port_t port, in_port_t plist[MAXPORTLIST]);
 int file_check(char *filename);
+void send_file(int cfd);
+void retrieve(int sfd, char *filename);
 
 char *files[MAXUSRFILES] = {NULL};
 //Client port list
@@ -50,12 +52,14 @@ in_port_t clist[MAXCLIENTS] = {0};
 in_port_t cs_port;
 char hostport[MAXPORTCHARS+1];
 
+//Each query has a uuid (universally unique identifier) and an upstream port
 typedef struct query
 {
 	uuid_t uuid;
 	in_port_t up_port;
 } query;
 
+//List of queries
 query *qlist[MAXQUERIES] = {NULL};
 
 
@@ -133,6 +137,7 @@ void *process_request()
 		char cmdstr[2];
 		char filename[MAXLINE];
 		uuid_t uuid;
+		uuid_string_t ustr;
 		in_port_t plist[MAXPORTLIST];
 		char recvports[MAXCLIENTS][MAXPORTCHARS+1];
 		int numpeersint = 0;
@@ -160,12 +165,14 @@ void *process_request()
 		if(recv(cfd,(void *)cmdstr,2,0) == 0)
 			break;
 
-		printf("Received queryy\n");
+		printf("Received query\n");
 		//convert to integer
 		int cmd = to_int(cmdstr);
 		printf("Received command: %d\n",cmd);
 		//Recv uuid of msg
-		recv(cfd,uuid,sizeof(uuid),0);
+		recv(cfd,ustr,sizeof(uuid_string_t),0);
+		uuid_parse(ustr,uuid);
+		printf("Received message with UUID: %s\n",ustr);
 		switch(cmd)
 		{
 			//Outgoing query
@@ -208,7 +215,7 @@ void *process_request()
 							perror("Connect");
 						//Send Lookup Command and filename
 						send(sfd,"1",2,0);
-						send(sfd,(void *)uuid,sizeof(uuid_t),0);
+						send(sfd,(void *)ustr,sizeof(uuid_string_t),0);
 						send(sfd,filename,MAXLINE,0);
 
 						printf("Waiting for peers to respond...\n"); 
@@ -239,43 +246,41 @@ void *process_request()
 						}
 					}
 					//Return numpeersint->char
+					char numpeersout[PEERRECVNUMCHARS] = {"0"};
+					to_string(numpeersint,numpeersout);
+					send(cfd,numpeersout,PEERRECVNUMCHARS,0);
 					//Return recv port list
+					int j = 0;
+					for(i = 0; i < numpeersint; i++)
+					{
+						if(j < MAXCLIENTS && (strcmp(recvports[j],"0") != 0))
+						{
+							send(cfd,recvports[j],MAXPORTCHARS+1,0);
+							j++;
+						}
+					}
+					assert(numpeersint == j+1);
+					//remove query
+					remove_query(uuid);
 				}
 				break;
+				//file retrieval
 			case 2:
-				//Get file name from client
-				recv(cfd,(void *)filename,MAXLINE,0);
-				printf("Calling Registry with filename: \"%s\"\n",filename);
-				//Check if file is held in registry
-				char *temp = lookup(filename);
-				//If file found
-				if(temp != NULL)
-				{
-					//Tell client we found file (Next message file name)
-					send(cfd,"1",2,0);
-					//send(cfd,(void *)temp,HOSTNAMELENGTH,0);
-					printf("Sending list\n");
-					sendlist(cfd,filename);
-					//printf("Server found host %s has file\n",temp);
-				}
-				//If file not found
-				else
-				{
-					//Tell client we did not find file
-					send(cfd,"0",2,0);
-					printf("Server did not find file\n");
-				}
+				send_file(cfd);
 				break;
 			//Client closing, unregister all files
 			case 3:
+				/*
 				//Get client peerid to remove all files
 				recv(cfd,(void *)peerid,HOSTNAMELENGTH,0);
 				printf("Removing all entries for peerid %s\n",peerid);
 				//remove all files for peerid
 				remove_all_entries(peerid);
+				*/
 				break;
 			//Called by client file checker when file gone
 			case 4:
+				/*
 				printf("Server called to remove file\n");
 				//Get file name and peerid
 				recv(cfd,(void *)filename,MAXLINE,0);
@@ -283,6 +288,7 @@ void *process_request()
 				//Remove the entry for the file
 				remove_entry(peerid,filename);
 				printf("Removing file %s, file removed from client %s\n",filename,peerid);
+				*/
 				break;
 		}
 	}
@@ -350,6 +356,8 @@ void client_user(void)
 				//Generate UUID for Request
 				uuid_t uuid;
 				uuid_generate(uuid);
+				uuid_string_t ustr;
+				uuid_unparse(uuid,ustr);
 				printf("Generated UUID: %s\n",uuid);
 
 				/*
@@ -380,7 +388,7 @@ void client_user(void)
 						perror("Connect");
 					//Send Lookup Command and filename
 					send(sfd,"1",2,0);
-					send(sfd,(void *)uuid,sizeof(uuid_t),0);
+					send(sfd,(void *)ustr,sizeof(uuid_string_t),0);
 					send(sfd,filename,MAXLINE,0);
 
 					printf("Waiting for peers to respond...\n"); 
@@ -417,6 +425,14 @@ void client_user(void)
 				if(recv)
 				{
 					printf("Would have received file here\n");
+					in_port_t port = (in_port_t)atoi(peerid);
+					sa.sin_port = htons(port);
+					err = connect(sfd,(const struct sockaddr *)&sa,sizeof(sa));
+					if(err < 0)
+						perror("Connect");
+					send(sfd,"2",2,0);
+					retrieve(sfd,filename);
+					printf("File transfer done!\n");
 				}
 				//TODO choose peer here and begin file transfer
 			//Close the client, unregister all files
@@ -514,6 +530,91 @@ int prompt_receive(int numpeers,char *peerid,char recvports[MAXCLIENTS][MAXPORTC
 		printf("Selected peerid: %s\n",peerid);
 	}
 	return input;
+}
+void send_file(int cfd)
+{
+		char filename[MAXLINE];
+		//Receive the filename, if no clients to accept, return
+		if(recv(cfd,(void *)filename,MAXLINE,0) == 0)
+		{
+			close(cfd);
+			return;
+		}
+		printf("Sending file: %s\n",filename);
+
+		//Send file
+		printf("File would be sent here\n");
+		//Open the file
+		int fd = open(filename,O_RDONLY); 
+		if(fd < 0)
+		{
+			printf("File couldnt be opened\n");
+			close(cfd);
+			return;
+		}
+		struct stat filestat;
+		fstat(fd,&filestat);
+		char filesize[MAXFILESIZECHARS];
+		//Convert fstat filesize to string
+		sprintf(filesize, "%d",(int)filestat.st_size);
+		//Send the file size
+		send(cfd,(void *)filesize,MAXFILESIZECHARS,0);
+		off_t len = 0;
+		//Send the entire file
+		if(sendfile(fd,cfd,0,&len,NULL,0) < 0)
+		{
+			printf("Error sending file\n");
+			close(cfd);
+			return;
+		}
+		printf("File sent\n");
+		//close file 
+		close(fd);
+		//close client connection
+		close(cfd);
+}
+/* Set up a server to retrieve from other client
+ * and receive the file filename from peerid
+ */
+void retrieve(int sfd, char *filename)
+{
+	char filesize[MAXFILESIZECHARS];
+	//Send client the file name wanted
+	send(sfd,(void *)filename,MAXLINE,0);
+	//Receive the filesize
+	recv(sfd,(void *)filesize,MAXFILESIZECHARS,0);
+	//File size and remaining bytes
+	int rem = atoi(filesize);
+	char buf[BUFFSIZE];
+	FILE *file = fopen(filename,"w");
+	int recvb = 0;
+	int totalb = atoi(filesize);
+	//Write to a new file
+	printf("Display file '%s'",filename);
+	if(totalb < 1000)
+		printf("\n");
+	else
+		printf("...too large\n");
+	while(((recvb = recv(sfd,buf,BUFFSIZE,0)) > 0) && (rem > 0))
+	{
+		fwrite(buf,sizeof(char),recvb,file);
+		rem -= recvb;
+		//write if file less that 1K
+		if(totalb < 1000)
+		{
+			fwrite(buf,sizeof(char),recvb,stdout);
+		}
+	}
+	printf("File received\n");
+	//Display file if less than 1KB
+	fclose(file);
+	file = fopen(filename,"r");
+	if(atoi(filesize) < 1000)
+	{
+	}
+	fclose(file);
+	//unlink(sa.sun_path);
+	close(sfd);
 }
 //Create client server
 void create_server(void)
@@ -630,6 +731,7 @@ in_port_t find_query_port(uuid_t uuid)
 			return qlist[i]->up_port;
 		}
 	}
+	return 0;
 }
 void remove_query(uuid_t uuid)
 {
@@ -717,7 +819,7 @@ int file_check(char *filename)
 }
 void port_to_string(in_port_t port, char *string)
 {
-	sprintf(string,)
+	sprintf(string,"%u",port);
 }
 void to_string(int val,char *string)
 {
