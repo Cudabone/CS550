@@ -26,3 +26,5 @@
 #define MAXCONNECTIONS 2
 #define MAXPATH 260
 #define TTL 25
+//Maximum number of queries client can handle at one time
+#define MAXQUERIES NUMCLIENTS

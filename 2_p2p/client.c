@@ -17,6 +17,7 @@
 #include <sys/time.h>
 #include <time.h>
 #include "const.h"
+#include <uuid/uuid.h>
 
 
 //Function prototypes
@@ -35,12 +36,23 @@ void add_client(in_port_t *pathlist);
 void to_string(int val,char *string);
 int to_int(char *string);
 int prompt_receive(int numpeers,char *peerid,char recvports[MAXCLIENTS][MAXPORTCHARS+1]);
+int have_query(uuid_t uuid);
+void add_query(uuid_t uuid, in_port_t up_port);
+void free_query_list(void);
 
 char *files[MAXUSRFILES] = {NULL};
 //Client port list
 in_port_t clist[MAXCLIENTS] = {0};
 in_port_t cs_port;
 char hostport[MAXPORTCHARS+1];
+
+typedef struct query
+{
+	uuid_t uuid;
+	in_port_t up_port;
+} query;
+
+query *qlist[MAXQUERIES] = {NULL};
 
 
 /*
@@ -94,13 +106,16 @@ void *process_request()
 	struct sockaddr_in ca;
 	int cfd;
 	socklen_t len = sizeof(ca);
-	printf("Server waiting for connection\n");
-	cfd = accept(csfd,(struct sockaddr*)&ca,&len);
-	printf("Connected\n");
 
 	//Loop until all clients disconnected
 	while(1)
 	{
+		//Wait for new request
+		printf("Server waiting for connection\n");
+		cfd = accept(csfd,(struct sockaddr*)&ca,&len);
+		printf("Connected\n");
+
+		/*
 		size_t querysize = sizeof(query);
 		query *q = malloc(querysize);
 		//Receive command #
@@ -110,13 +125,23 @@ void *process_request()
 		//Receive command from client to perform
 		if(recv(cfd,(void *)q,querysize,0) == 0)
 			break;
-		printf("Received query\n");
+			*/
+		char cmdstr[2];
+		char filename[MAXLINE];
+		uuid_t uuid;
+
+		if(recv(cfd,(void *)cmdstr,2,0) == 0)
+			break;
+
+		printf("Received queryy\n");
 		//convert to integer
-		int cmd = q->cmd;
+		int cmd = to_int(cmdstr);
 		printf("Received command: %d\n",cmd);
+		//Recv uuid of msg
+		recv(cfd,uuid,sizeof(uuid),0);
 		switch(cmd)
 		{
-			//Register file for client
+			//Outgoing query
 			case 1:	
 				//Get file name and peerid(hostname)
 				recv(cfd,(void *)filename,MAXLINE,0);
@@ -125,7 +150,7 @@ void *process_request()
 				//Register the file 
 				registry(peerid,filename);
 				break;
-			//Lookup file for client
+			//Incoming Query Response
 			case 2:
 				//Get file name from client
 				recv(cfd,(void *)filename,MAXLINE,0);
@@ -202,6 +227,7 @@ void client_user(void)
 	int cmd;
 	do{
 		//Get command from user
+
 		cmd = prompt();
 		char filename[MAXLINE];
 		char peerid[MAXPORTCHARS+1];
@@ -227,6 +253,12 @@ void client_user(void)
 			case 2: 
 				//Read filename from user
 				read_filename(filename,1);
+
+				//Generate UUID for Request
+				uuid_t uuid;
+				uuid_generate(uuid);
+				printf("Generated UUID: %s\n",uuid);
+
 				/*
 				query q;
 				size_t querysize = sizeof(query);
@@ -255,6 +287,7 @@ void client_user(void)
 						perror("Connect");
 					//Send Lookup Command and filename
 					send(sfd,"1",2,0);
+					send(sfd,(void *)uuid,sizeof(uuid_t),0);
 					send(sfd,filename,MAXLINE,0);
 
 					printf("Waiting for peers to respond...\n"); 
@@ -290,7 +323,7 @@ void client_user(void)
 				//Call recv file here
 				if(recv)
 				{
-
+					printf("Would have received file here\n");
 				}
 				//TODO choose peer here and begin file transfer
 			//Close the client, unregister all files
@@ -478,6 +511,52 @@ void add_client(in_port_t *pathlist)
 			pathlist[i] = cs_port;
 		else if(i == TTL-1)
 			printf("Path list full\n");
+	}
+}
+//Finds query port in list and 
+void find_query_port(uuid_t uuid)
+{
+	int i;
+	for(i = 0; i < MAXQUERIES; i++)
+	{
+		if(qlist[i] != NULL)
+		{
+
+		}
+	}
+}
+int have_query(uuid_t uuid)
+{
+	int i; 
+	for(i = 0; i < MAXQUERIES; i++)
+	{
+		if(qlist[i] != NULL && uuid_compare(uuid,qlist[i]->uuid) == 0)
+			return 1;
+	}
+	return 0;
+}
+void add_query(uuid_t uuid, in_port_t up_port)
+{
+	int i;
+	for(i = 0; i < MAXQUERIES; i++)
+	{
+		if(qlist[i] == NULL)
+		{
+			query *q = malloc(sizeof(query));
+			uuid_copy(q->uuid,uuid);
+			q->up_port = up_port;
+			qlist[i] = q;
+			break;
+		}
+	}
+}
+void free_query_list(void)
+{
+	int i;
+	for(i = 0; i < MAXQUERIES; i++)
+	{
+		if(qlist[i] != NULL)
+			free(qlist[i]);
 	}
 }
 /* Adds a file to this clients file listing */
