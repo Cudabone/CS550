@@ -28,3 +28,4 @@
 #define TTL 25
 //Maximum number of queries client can handle at one time
 #define MAXQUERIES NUMCLIENTS
+#define MAXPORTLIST 1000

@@ -39,6 +39,10 @@ int prompt_receive(int numpeers,char *peerid,char recvports[MAXCLIENTS][MAXPORTC
 int have_query(uuid_t uuid);
 void add_query(uuid_t uuid, in_port_t up_port);
 void free_query_list(void);
+void remove_query(uuid_t uuid);
+in_port_t find_query_port(uuid_t uuid);
+void add_port(in_port_t port, in_port_t plist[MAXPORTLIST]);
+int file_check(char *filename);
 
 char *files[MAXUSRFILES] = {NULL};
 //Client port list
@@ -129,6 +133,29 @@ void *process_request()
 		char cmdstr[2];
 		char filename[MAXLINE];
 		uuid_t uuid;
+		in_port_t plist[MAXPORTLIST];
+		char recvports[MAXCLIENTS][MAXPORTCHARS+1];
+		int numpeersint = 0;
+		char numpeers[PEERRECVNUMCHARS];
+
+		struct sockaddr_in sa;
+		int sfd;
+		//Socket over localhost to central indexing server
+		sfd = socket(AF_INET,SOCK_STREAM,0);
+		if(sfd < 0)
+			perror("Socket");
+
+		//Set socket structure variables
+		int err;
+		//memset(&sa,0,sizeof(sa));
+		sa.sin_family = AF_INET;
+		//Bind to 127.0.0.1 (Local)
+		sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+		//Initialize port list to 0;
+		int j;
+		for(j = 0; j < MAXCLIENTS; j++)
+			strcpy(recvports[j],"0");
 
 		if(recv(cfd,(void *)cmdstr,2,0) == 0)
 			break;
@@ -145,12 +172,76 @@ void *process_request()
 			case 1:	
 				//Get file name and peerid(hostname)
 				recv(cfd,(void *)filename,MAXLINE,0);
-				recv(cfd,(void *)peerid,HOSTNAMELENGTH,0);
-				printf("Calling Registry with filename: \"%s\"\n",filename);
-				//Register the file 
-				registry(peerid,filename);
+				//If alread processed query
+				if(have_query(uuid))
+				{
+					//Dont forward
+					//remove_query(uuid);		
+					//Send not found none
+					send(cfd,"0",2,0);
+				}
+				//Forward check to all client if not handled already
+				else
+				{
+					if(file_check(filename) == 1)				
+					{
+						numpeersint++;
+						char portno[MAXPORTCHARS+1];
+						//add_port(cs_port,plist);
+						to_string(cs_port,portno);
+						strcpy(recvports[0],portno);
+						printf("Client added: %s to port list\n",portno);
+					}
+					//Forward to all clients
+					int i;
+					for(i = 0; i < MAXCLIENTS; i++)
+					{
+						if(clist[i] == 0)
+						{
+							printf("Gone through entire client list\n");
+							break;
+						}
+						//Start request to each server
+						sa.sin_port = htons(clist[i]);
+						err = connect(sfd,(const struct sockaddr *)&sa,sizeof(sa));
+						if(err < 0)
+							perror("Connect");
+						//Send Lookup Command and filename
+						send(sfd,"1",2,0);
+						send(sfd,(void *)uuid,sizeof(uuid_t),0);
+						send(sfd,filename,MAXLINE,0);
+
+						printf("Waiting for peers to respond...\n"); 
+
+						//Receive number of peers with file 
+						recv(sfd,(void *)numpeers,PEERRECVNUMCHARS,0); 
+						numpeersint += to_int(numpeers); 
+						printf("Found %d more peers with file\n",numpeersint);
+						//If there are peers to recv from
+						if(numpeersint != 0)
+						{
+							int temp;
+							for(temp = 0; temp < numpeersint; temp++)
+							{
+								char portno[MAXPORTCHARS+1];
+								//Receive port of each available client with file
+								recv(sfd,(void *)portno,MAXPORTCHARS+1,0);
+								int j;
+								for(j = 0; j < MAXCLIENTS; j++)
+								{
+									if(strcmp(recvports[j],"0") == 0)
+									{
+										strcpy(recvports[j],portno);
+										break;
+									}
+								}
+							}
+						}
+					}
+					//Return numpeersint->char
+					//Return recv port list
+				}
 				break;
-			//Incoming Query Response
 			case 2:
 				//Get file name from client
 				recv(cfd,(void *)filename,MAXLINE,0);
@@ -219,10 +310,12 @@ void client_user(void)
 	//Bind to 127.0.0.1 (Local)
 	sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 
+	/*
 	//Connect to cental indexing server
 	err = connect(sfd,(const struct sockaddr *)&sa,sizeof(sa));
 	if(err < 0)
 		perror("Connect");
+		*/
 	
 	int cmd;
 	do{
@@ -502,6 +595,19 @@ void initialize_list(in_port_t *pathlist)
 	}
 }
 */
+//Adds a port who has file to port list
+void add_port(in_port_t port, in_port_t plist[MAXPORTLIST])
+{
+	int i;
+	for(i = 0; i < MAXPORTLIST; i++)
+	{
+		if(plist[i] == 0)
+		{
+			plist[i] = port;
+			break;
+		}
+	}
+}
 void add_client(in_port_t *pathlist)
 {
 	int i;
@@ -513,15 +619,28 @@ void add_client(in_port_t *pathlist)
 			printf("Path list full\n");
 	}
 }
-//Finds query port in list and 
-void find_query_port(uuid_t uuid)
+//Finds query port in list
+in_port_t find_query_port(uuid_t uuid)
 {
 	int i;
 	for(i = 0; i < MAXQUERIES; i++)
 	{
-		if(qlist[i] != NULL)
+		if(qlist[i] != NULL && uuid_compare(uuid,qlist[i]->uuid) == 0)
 		{
-
+			return qlist[i]->up_port;
+		}
+	}
+}
+void remove_query(uuid_t uuid)
+{
+	int i; 
+	for(i = 0; i < MAXQUERIES; i++)
+	{
+		if(qlist[i] != NULL && uuid_compare(uuid,qlist[i]->uuid) == 0)
+		{
+			free(qlist[i]);
+			qlist[i] = NULL;
+			break;
 		}
 	}
 }
@@ -595,6 +714,10 @@ int file_check(char *filename)
 		}
 	}
 	return 0;
+}
+void port_to_string(in_port_t port, char *string)
+{
+	sprintf(string,)
 }
 void to_string(int val,char *string)
 {
