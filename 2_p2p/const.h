@@ -24,10 +24,10 @@
 //Maximum number of total clients (Range 1-65535)
 #define MAXCLIENTS 1000 
 //Number of things for client to listen for
-#define MAXCONNECTIONS 2
+#define MAXCONNECTIONS NUMCLIENTS
 #define MAXPATH 260
 //TTL Range 1-100
-#define TTL 5
+#define TTL 2
 #define TTLCHARS 4
 //Maximum number of queries client can handle at one time
 #define MAXQUERIES NUMCLIENTS
