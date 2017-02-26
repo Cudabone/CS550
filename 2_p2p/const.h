@@ -32,3 +32,5 @@
 //Maximum number of queries client can handle at one time
 #define MAXQUERIES NUMCLIENTS
 #define MAXPORTLIST 1000
+//Number of seconds between file checks
+#define UPDATETIME 1

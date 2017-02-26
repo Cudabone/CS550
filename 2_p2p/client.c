@@ -20,10 +20,6 @@
 #include <uuid/uuid.h>
 #include <assert.h>
 
-//TODO list
-//-Implement TTL
-//-Implement file_checking
-//-Ensure never sending it to original query sender
 //Function prototypes
 void add_file(char *filename);
 void free_files();
@@ -1056,6 +1052,6 @@ void file_checker()
 					fclose(file);
 			}
 		}
-		sleep(1);
+		sleep(UPDATETIME);
 	}
 }
