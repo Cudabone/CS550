@@ -3,7 +3,7 @@
 //Maximum hostname length
 #define HOSTNAMELENGTH 16
 //Number of clients
-#define NUMCLIENTS 3
+#define NUMCLIENTS 5
 //Number of threads for client, minimum = 3
 //Need two threads for self, one for every other client
 #define NTHREADS NUMCLIENTS+1
