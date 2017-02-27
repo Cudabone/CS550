@@ -1,9 +1,15 @@
+//Testing flag
+//#define TESTING
+//#define TEST1 
+//#define TEST2
+//#define TEST3
+//#define TEST4
 //Maximum filename length
 #define MAXLINE 1024
 //Maximum hostname length
 #define HOSTNAMELENGTH 16
 //Number of clients
-#define NUMCLIENTS 5
+#define NUMCLIENTS 10
 //Number of threads for client, minimum = 3
 //Need two threads for self, one for every other client
 #define NTHREADS NUMCLIENTS+1
@@ -27,7 +33,7 @@
 #define MAXCONNECTIONS NUMCLIENTS
 #define MAXPATH 260
 //TTL Range 1-100
-#define TTL 2
+#define TTL 3
 #define TTLCHARS 4
 //Maximum number of queries client can handle at one time
 #define MAXQUERIES NUMCLIENTS

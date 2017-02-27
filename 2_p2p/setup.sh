@@ -16,7 +16,14 @@ cp ./run_leaf5.sh ./c5/
 
 echo Copying test files
 cd testfiles
+rm ../c1/*.txt
+rm ../c2/*.txt
+rm ../c3/*.txt
+rm ../c4/*.txt
+rm ../c5/*.txt
 cp test1.txt ../c1/
 cp test2.txt ../c2/
 cp test3.txt ../c3/
+cp test3.txt ../c4/
+cp test3.txt ../c5/
 cd ..

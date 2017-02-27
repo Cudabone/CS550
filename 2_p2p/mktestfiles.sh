@@ -8,13 +8,13 @@ echo complete
 
 #Making 
 echo -n Making star topology files...
-echo 10001 >> star1.txt
-echo 10002 >> star1.txt
-echo 10003 >> star1.txt
-echo 10004 >> star1.txt
+echo 10002 >> star0.txt
+echo 10003 >> star0.txt
+echo 10004 >> star0.txt
+echo 10005 >> star0.txt
 
-echo 10000 >> star2.txt
-echo 10000 >> star3.txt
-echo 10000 >> star4.txt
-echo 10000 >> star5.txt
+echo 10001 >> star2.txt
+echo 10001 >> star3.txt
+echo 10001 >> star4.txt
+echo 10001 >> star5.txt
 echo complete

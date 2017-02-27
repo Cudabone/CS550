@@ -48,6 +48,7 @@ void retrieve(int sfd, char *filename);
 void file_checker();
 void print_queries();
 void print_plist(char recvports[MAXCLIENTS][MAXPORTCHARS+1]);
+void client_user(void);
 
 char *files[MAXUSRFILES] = {NULL};
 //Client port list
@@ -99,10 +100,28 @@ int main(int argc, char **argv)
 	}
 	cs_port = (in_port_t)atoi(argv[1]);
 	//printf("Read host port %d\n",cs_port);
-	//copy
 	strcpy(hostport,argv[1]);
 	if(!read_setup(argv[2]))
 		return 1;
+
+	/*
+#ifdef TESTING
+#if defined TEST1
+	if(cs_port == 10002)
+#elif defined TEST2
+	if(cs_port == 10002 || cs_port == 10003)
+#elif defined TEST3
+	if(cs_port == 10002 || cs_port == 10003 || cs_port == 10004)
+#elif defined TEST4
+	if(cs_port == 10002 || cs_port == 10003 || cs_port == 10004 || cs_port == 10005)
+#endif
+	{
+		client_user();
+		return 0;
+	}
+#endif
+*/
+
 	print_clients();
 	create_server();
 	create_threads();
@@ -123,7 +142,7 @@ void *process_request()
 	while(!done)
 	{
 		//Wait for new request
-		printf("Server waiting for connection\n");
+		//printf("Server waiting for connection\n");
 		cfd = accept(csfd,(struct sockaddr*)&ca,&len);
 		if(cfd < 0)
 		{
@@ -131,7 +150,7 @@ void *process_request()
 			//perror("Accept");
 		}
 
-		printf("Connected\n");
+		//printf("Connected\n");
 		//print_queries();
 
 		/*
@@ -361,8 +380,10 @@ void *process_request()
 		close(cfd);
 		//close(sfd);
 	}
+	done = 1;
 	//Close the connection
 	close(cfd);
+	//close(csfd);
 	printf("Done\n");
 	return NULL;
 }
@@ -391,6 +412,138 @@ void client_user(void)
 	if(err < 0)
 		perror("Connect");
 		*/
+#ifdef TESTING
+#if defined TEST1
+	if(cs_port == 10002)
+#elif defined TEST2
+	if(cs_port == 10002 || cs_port == 10003)
+#elif defined TEST3
+	if(cs_port == 10002 || cs_port == 10003 || cs_port == 10004)
+#elif defined TEST4
+	if(cs_port == 10002 || cs_port == 10003 || cs_port == 10004 || cs_port == 10005)
+#endif
+	{
+
+		//Set socket structure variables
+		int err;
+		//memset(&sa,0,sizeof(sa));
+		sa.sin_family = AF_INET;
+		//Bind to 127.0.0.1 (Local)
+		sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+		//Bind to port
+		sa.sin_port = htons(clist[0]);
+
+		char recvports[MAXCLIENTS][MAXPORTCHARS+1];
+		char numpeers[PEERRECVNUMCHARS];
+		int numpeersint = 0;
+		char port[MAXPORTCHARS+1];
+		to_string(cs_port,port);
+		/*
+		char found[2];
+		int found_int;
+		*/
+		int ttlval = TTL;
+		char ttlstr[TTLCHARS];
+		to_string(ttlval,ttlstr);
+
+		/* Timing variables */
+		struct timeval etstart, etstop;  /* Elapsed times using gettimeofday() */
+		struct timezone tzdummy;
+		clock_t etstart2, etstop2;	/* Elapsed times using times() */
+		unsigned long long usecstart, usecstop;
+		struct tms cputstart, cputstop;  /* CPU times for my processes */
+		//Start clock
+		gettimeofday(&etstart, &tzdummy);
+		etstart2 = times(&cputstart);
+		int i;
+		for(i = 0; i < 200;i++)
+		{
+			/*
+			sfd = socket(AF_INET,SOCK_STREAM,0);
+			if(sfd < 0)
+				perror("Socket");
+			err = connect(sfd,(const struct sockaddr *)&sa,sizeof(sa));
+			if(err < 0)
+				perror("Connect (User)");
+				*/
+			//Do a lookup request
+			//Send Server command #
+			char *filename = "testing.txt";
+			uuid_t uuid;
+			uuid_generate(uuid);
+			uuid_string_t ustr;
+			uuid_unparse(uuid,ustr);
+			//printf("Generated UUID: %s\n",uuid);
+			add_query(uuid,cs_port);	
+
+			//Send query
+			int i;
+			for(i = 0; i < MAXCLIENTS; i++)
+			{
+				//create new socket
+				sfd = socket(AF_INET,SOCK_STREAM,0);
+				if(sfd < 0)
+					perror("Socket");
+
+				if(clist[i] == 0)
+				{
+					//printf("Gone through entire client list\n");
+					break;
+				}
+				//Start request to each server
+				sa.sin_port = htons(clist[i]);
+				err = connect(sfd,(const struct sockaddr *)&sa,sizeof(sa));
+				if(err < 0)
+					perror("Connect (User)");
+				//Send Lookup Command and filename
+				send(sfd,"1",2,0);
+				send(sfd,(void *)ustr,sizeof(uuid_string_t),0);
+				send(sfd,port,MAXPORTCHARS+1,0);
+				send(sfd,ttlstr,TTLCHARS,0);
+				send(sfd,filename,MAXLINE,0);
+
+				//Receive number of peers with file 
+				recv(sfd,(void *)numpeers,PEERRECVNUMCHARS,0); 
+				numpeersint += to_int(numpeers); 
+				//printf("Found %d more peers with file\n",numpeersint);
+				//If there are peers to recv from
+				if(numpeersint != 0)
+				{
+					int temp;
+					for(temp = 0; temp < numpeersint; temp++)
+					{
+						char portno[MAXPORTCHARS+1];
+						//Receive port of each available client with file
+						recv(sfd,(void *)portno,MAXPORTCHARS+1,0);
+						int j;
+						for(j = 0; j < MAXCLIENTS; j++)
+						{
+							if(strcmp(recvports[j],"0") == 0)
+							{
+								strcpy(recvports[j],portno);
+								break;
+							}
+						}
+					}
+				}
+				close(sfd);
+			}
+			remove_query(uuid);
+		}
+		gettimeofday(&etstop, &tzdummy);
+		etstop2 = times(&cputstop);
+		usecstart = (unsigned long long)etstart.tv_sec * 1000000 + etstart.tv_usec;
+		usecstop = (unsigned long long)etstop.tv_sec * 1000000 + etstop.tv_usec;
+		/* Display timing results */
+		//Divide to by 1000 to get milliseconds, and and another thousand for the
+		//requests
+		printf("\nAvg Response time = %g ms.\n",(float)(usecstop - usecstart)/(float)(1000*200));
+		done = 1;
+		close(sfd);
+	}
+	//close(csfd);
+	return;
+#endif
 	
 	int cmd;
 	do{
@@ -806,17 +959,6 @@ void add_port(in_port_t port, in_port_t plist[MAXPORTLIST])
 		}
 	}
 }
-void add_client(in_port_t *pathlist)
-{
-	int i;
-	for(i = 0; i < TTL; i++)
-	{
-		if(pathlist[i] == 0)
-			pathlist[i] = cs_port;
-		else if(i == TTL-1)
-			printf("Path list full\n");
-	}
-}
 //Finds query port in list
 in_port_t find_query_port(uuid_t uuid)
 {
@@ -830,6 +972,7 @@ in_port_t find_query_port(uuid_t uuid)
 	}
 	return 0;
 }
+//Removes a query from the list of queries by UUID
 void remove_query(uuid_t uuid)
 {
 	int i; 
@@ -849,6 +992,7 @@ void remove_query(uuid_t uuid)
 		printf("Found query in list,removing.\n");
 		*/
 }
+//Checks if the query already exists in the list
 int have_query(uuid_t uuid)
 {
 	int i; 
@@ -859,6 +1003,7 @@ int have_query(uuid_t uuid)
 	}
 	return 0;
 }
+//Prints all queries in the list, for debugging purposes
 void print_queries()
 {
 	int i;
@@ -874,6 +1019,7 @@ void print_queries()
 		}
 	}
 }
+//Adds a query to the list by UUID and upstream port
 void add_query(uuid_t uuid, in_port_t up_port)
 {
 	int i;
@@ -889,6 +1035,7 @@ void add_query(uuid_t uuid, in_port_t up_port)
 		}
 	}
 }
+//Frees the query list
 void free_query_list(void)
 {
 	int i;
@@ -927,6 +1074,7 @@ void free_files()
 		if(files[i] != NULL)
 			free(files[i]);
 }
+//Checks if the file is in the file list
 int file_check(char *filename)
 {
 	int i;
@@ -940,14 +1088,17 @@ int file_check(char *filename)
 	}
 	return 0;
 }
+//Converts a port number to a string
 void port_to_string(in_port_t port, char *string)
 {
 	sprintf(string,"%u",port);
 }
+//Converts an integer to a string
 void to_string(int val,char *string)
 {
 	sprintf(string,"%d",val);	
 }
+//Converts a string to an integer
 int to_int(char *string)
 {
 	return atoi(string);
@@ -991,6 +1142,7 @@ int read_setup(char *filename)
 		return 1;
 	}
 }
+//Prints all clients in the client list
 void print_clients()
 {
 	int i;
@@ -1079,6 +1231,7 @@ void file_checker()
 		sleep(UPDATETIME);
 	}
 }
+//Prints the port list in the query response, for debugging
 void print_plist(char recvports[MAXCLIENTS][MAXPORTCHARS+1])
 {
 	int i;
