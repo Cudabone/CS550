@@ -642,7 +642,7 @@ void client_user(void)
 						int temp;
 						for(temp = 0; temp < numpeersint; temp++)
 						{
-							char portno[MAXPORTCHARS+1];
+							char portno[MAXPORTCHARS+1] = {"0"};
 							//Receive port of each available client with file
 							recv(sfd,(void *)portno,MAXPORTCHARS+1,0);
 							int j;
