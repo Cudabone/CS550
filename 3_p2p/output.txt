@@ -1,0 +1,61 @@
+Script started on Sun Feb 26 23:20:46 2017
+command: ./run_leaf2.sh
+./client 10002 ../config/star2.txt
+Client 0: 10001
+Enter the number for the desired command
+1: Register a file for network
+2: Look up / Retreive a file
+3: Exit
+1
+Enter the filename to register
+test2.txt
+Enter the number for the desired command
+1: Register a file for network
+2: Look up / Retreive a file
+3: Exit
+Received query
+Received query with UUID: E592DFF6-C55C-4693-9160-A9865A098A11, up-port 10001
+Completed Query!
+Received query
+Sending file: test2.txt
+File sent
+Received query
+Received query with UUID: EB5A7B8F-40D6-4870-92CE-2A97E85438DF, up-port 10001
+Completed Query!
+2
+Enter the filename to retreive
+test3.txt
+Waiting for peers to respond...
+Found 3 total peers with file
+Retrieve from a peer?
+1: Yes
+2: No
+1
+Select which peer to retrieve file from
+0: port 10003
+1: port 10004
+2: port 10005
+2
+Selected peerid: 10005
+Display file 'test3.txt'
+test3
+test3
+File received
+Would have received file here
+File transfer done!
+Enter the number for the desired command
+1: Register a file for network
+2: Look up / Retreive a file
+3: Exit
+3
+Done
+Done
+Done
+Done
+Done
+Done
+Done
+Done
+Done
+
+Script done on Sun Feb 26 23:22:20 2017
