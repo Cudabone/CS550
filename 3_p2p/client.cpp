@@ -36,8 +36,8 @@ int prompt_receive(int numpeers,char *peerid,std::list<std::string> recvports);
 
 //Servers
 void client_user();
-bool create_server(int &lsfd, struct sockaddr_in &lsa, const in_port_t &port);
-void *process_request(const int &lsfd,struct sockaddr_in &lsa,port_list clist);
+bool create_server();
+void *process_request();
 void retrieve(int sfd, char *filename);
 
 //Multithreading functions
@@ -63,10 +63,14 @@ typedef struct
 
 //Query listing
 std::list<query *> qlist;
+//File listing
 std::list<std::string> flist;
 
+//Client Server Info
+int lsfd;
+struct sockaddr_in lsa;
 in_port_t ls_port;
-port_list clist;
+port_list plist;
 
 int done = 0;
 int main(int argc, char **argv)
@@ -86,18 +90,19 @@ int main(int argc, char **argv)
 	}
 	ls_port = (in_port_t)atoi(argv[1]);
 	std::string setup_file = argv[2];
-	if(!read_setup(setup_file,clist))
+	if(!read_setup(setup_file,plist))
 		return 3;
-	print_port_list(clist);
-	struct sockaddr_in lsa;
-	int lsfd;
-	if(!create_server(lsfd,lsa,ls_port))
+	print_port_list(plist);
+	//struct sockaddr_in lsa;
+	//int lsfd;
+	if(!create_server())
 		return 4;
-
+	create_threads();
 	free_qlist();
+
 }
 //Process a request from a client, or client file checker
-void *process_request(const int &lsfd,struct sockaddr_in &lsa,port_list clist)
+void *process_request()
 {
 	//Create a socket addr for client
 	struct sockaddr_in ca;
@@ -136,7 +141,7 @@ void *process_request(const int &lsfd,struct sockaddr_in &lsa,port_list clist)
 		uuid_string_t ustr;
 		//in_port_t plist[MAXPORTLIST];
 		//char recvports[MAXCLIENTS][MAXPORTCHARS+1];
-		int numpeersint = 0;
+		unsigned int numpeersint = 0;
 		char numpeers[PEERRECVNUMCHARS];
 		int ttlval;
 		char ttlstr[TTLCHARS];
@@ -250,7 +255,7 @@ void *process_request(const int &lsfd,struct sockaddr_in &lsa,port_list clist)
 						//printf("Client added: %s to port list\n",portno);
 					}
 					//Forward to all clients
-					for(port_list::const_iterator it = clist.begin(); it != clist.end(); it++)
+					for(port_list::const_iterator it = plist.begin(); it != plist.end(); it++)
 					{
 						if(*it != up_port)
 						{
@@ -306,7 +311,8 @@ void *process_request(const int &lsfd,struct sockaddr_in &lsa,port_list clist)
 					send(cfd,numpeersout,PEERRECVNUMCHARS,0);
 					//Return recv port list
 					//print_plist(recvports);
-					assert(numpeersint == recvports.size());
+					printf("Numpeersint: %u, Recvports size: %lu\n",numpeersint,recvports.size());
+					assert((int)numpeersint == (int)recvports.size());
 					while(!recvports.empty())
 					{
 						send(cfd,recvports.front().c_str(),MAXPORTCHARS+1,0);
@@ -381,109 +387,116 @@ void client_user()
 		{
 			//Register a file
 			case 1: 
-				//Read filename from user
-				read_filename(filename,0);
-				//printf("Read filename: %s\n",filename);
-				add_file(filename);
-				break;
+				{
+					//Read filename from user
+					read_filename(filename,0);
+					//printf("Read filename: %s\n",filename);
+					add_file(filename);
+					break;
+				}
 			//Do a lookup and then can retrieve
 			case 2: 
-				//Read filename from user
-				read_filename(filename,1);
-
-				//Generate UUID for Request
-				uuid_t uuid;
-				uuid_generate(uuid);
-				uuid_string_t ustr;
-				uuid_unparse(uuid,ustr);
-				//printf("Generated UUID: %s\n",uuid);
-				add_query(uuid,ls_port);	
-
-				/*
-				query q;
-				size_t querysize = sizeof(query);
-
-				//Initialize query request
-				initialize_list(q.pathlist);
-				q.cmd = 1;
-				q.timetolive = TTL;
-				strcpy(q.found,"1");
-				strcpy(q.filename,filename);
-				add_client(q.pathlist);
-				*/
-
-				for(port_list::const_iterator it = clist.begin(); it != clist.end(); it++)
 				{
-					//create new socket
-					sfd = socket(AF_INET,SOCK_STREAM,0);
-					if(sfd < 0)
-						perror("Socket");
-					in_port_t nextport = *it;
+					//Read filename from user
+					read_filename(filename,1);
 
-					//Start request to each server
-					sa.sin_port = htons(nextport);
-					err = connect(sfd,(const struct sockaddr *)&sa,sizeof(sa));
-					if(err < 0)
-						perror("Connect (User)");
-					//Send Lookup Command and filename
-					send(sfd,"1",2,0);
-					send(sfd,(void *)ustr,sizeof(uuid_string_t),0);
-					send(sfd,port,MAXPORTCHARS+1,0);
-					send(sfd,ttlstr,TTLCHARS,0);
-					send(sfd,filename,MAXLINE,0);
+					//Generate UUID for Request
+					uuid_t uuid;
+					uuid_generate(uuid);
+					uuid_string_t ustr;
+					uuid_unparse(uuid,ustr);
+					//printf("Generated UUID: %s\n",uuid);
+					add_query(uuid,ls_port);	
 
-					printf("Waiting for peers to respond...\n"); 
-					
-					//Receive number of peers with file 
-					recv(sfd,(void *)numpeers,PEERRECVNUMCHARS,0); 
-					numpeersint += atoi(numpeers); 
-					//printf("Found %d more peers with file\n",numpeersint);
-					//If there are peers to recv from
-					if(numpeersint != 0)
+					/*
+					   query q;
+					   size_t querysize = sizeof(query);
+
+					//Initialize query request
+					initialize_list(q.pathlist);
+					q.cmd = 1;
+					q.timetolive = TTL;
+					strcpy(q.found,"1");
+					strcpy(q.filename,filename);
+					add_client(q.pathlist);
+					*/
+
+					for(port_list::const_iterator it = plist.begin(); it != plist.end(); it++)
 					{
-						int temp;
-						for(temp = 0; temp < numpeersint; temp++)
+						//create new socket
+						sfd = socket(AF_INET,SOCK_STREAM,0);
+						if(sfd < 0)
+							perror("Socket");
+						in_port_t nextport = *it;
+
+						//Start request to each server
+						sa.sin_port = htons(nextport);
+						err = connect(sfd,(const struct sockaddr *)&sa,sizeof(sa));
+						if(err < 0)
+							perror("Connect (User)");
+						//Send Lookup Command and filename
+						send(sfd,"1",2,0);
+						send(sfd,(void *)ustr,sizeof(uuid_string_t),0);
+						send(sfd,port,MAXPORTCHARS+1,0);
+						send(sfd,ttlstr,TTLCHARS,0);
+						send(sfd,filename,MAXLINE,0);
+
+						printf("Waiting for peers to respond...\n"); 
+
+						//Receive number of peers with file 
+						recv(sfd,(void *)numpeers,PEERRECVNUMCHARS,0); 
+						numpeersint += atoi(numpeers); 
+						//printf("Found %d more peers with file\n",numpeersint);
+						//If there are peers to recv from
+						if(numpeersint != 0)
 						{
-							char portno[MAXPORTCHARS+1] = {"0"};
-							//Receive port of each available client with file
-							recv(sfd,(void *)portno,MAXPORTCHARS+1,0);
-							std::string portstr(portno);
-							recvports.push_back(portstr);
+							int temp;
+							for(temp = 0; temp < numpeersint; temp++)
+							{
+								char portno[MAXPORTCHARS+1] = {"0"};
+								//Receive port of each available client with file
+								recv(sfd,(void *)portno,MAXPORTCHARS+1,0);
+								std::string portstr(portno);
+								recvports.push_back(portstr);
+							}
 						}
+						close(sfd);
 					}
+					//print_plist(recvports);
+					//close socket
+					//close(sfd);
+					sfd = socket(AF_INET,SOCK_STREAM,0);
+					printf("Found %d total peers with file\n",numpeersint);
+					int recv = 0;
+					if(numpeersint != 0)
+						recv = prompt_receive(numpeersint,peerid,recvports);
+					//Call recv file here
+					if(recv == 1)
+					{
+						//TODO may not need new connection if in list
+						in_port_t port = (in_port_t)atoi(peerid);
+						sa.sin_port = htons(port);
+						err = connect(sfd,(const struct sockaddr *)&sa,sizeof(sa));
+						if(err < 0)
+							perror("Connect (File Receive)");
+						send(sfd,"2",2,0);
+						retrieve(sfd,filename);
+						printf("Would have received file here\n");
+						printf("File transfer done!\n");
+					}
+					remove_query(uuid);
+					//print_queries();
 					close(sfd);
+					//sfd = socket(AF_INET,SOCK_STREAM,0);
+					break;
 				}
-				//print_plist(recvports);
-				//close socket
-				//close(sfd);
-				sfd = socket(AF_INET,SOCK_STREAM,0);
-				printf("Found %d total peers with file\n",numpeersint);
-				int recv = 0;
-				if(numpeersint != 0)
-					recv = prompt_receive(numpeersint,peerid,recvports);
-				//Call recv file here
-				if(recv == 1)
-				{
-					//TODO may not need new connection if in list
-					in_port_t port = (in_port_t)atoi(peerid);
-					sa.sin_port = htons(port);
-					err = connect(sfd,(const struct sockaddr *)&sa,sizeof(sa));
-					if(err < 0)
-						perror("Connect (File Receive)");
-					send(sfd,"2",2,0);
-					retrieve(sfd,filename);
-					printf("Would have received file here\n");
-					printf("File transfer done!\n");
-				}
-				remove_query(uuid);
-				//print_queries();
-				close(sfd);
-				sfd = socket(AF_INET,SOCK_STREAM,0);
 				//TODO choose peer here and begin file transfer
 			//Close the client, unregister all files
 			case 3:
-				//TODO we can spread word to close all servers
-				break;
+				{
+					//TODO we can spread word to close all servers
+					break;
+				}
 		}
 	}while(cmd != 3);
 	done = 1;
@@ -491,7 +504,7 @@ void client_user()
 	close(sfd);
 	//Close client server as well
 	//unlink(csa.sun_path);
-	close(csfd);
+	close(lsfd);
 }
 bool read_setup(std::string filename,port_list &ports)
 {
@@ -529,7 +542,7 @@ void print_port_list(const port_list &ports)
 	}
 	std::cout << "]" << std::endl;
 }
-bool create_server(int &lsfd, struct sockaddr_in &lsa, const in_port_t &port)
+bool create_server()
 {
 	lsfd = socket(AF_INET,SOCK_STREAM,0);
 	if(lsfd < 0)
@@ -541,7 +554,7 @@ bool create_server(int &lsfd, struct sockaddr_in &lsa, const in_port_t &port)
 	//Set socket structure vars
 	memset(&lsa,0,sizeof(lsa));
 	lsa.sin_family = AF_INET;
-	lsa.sin_port = htons(port);
+	lsa.sin_port = htons(ls_port);
 
 	//Set as local address
 	lsa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
@@ -717,7 +730,6 @@ void send_file(int cfd)
  */
 void file_checker()
 {
-	int i;
 	while(!done)
 	{
 		FILE *file;

@@ -6,7 +6,7 @@ CFLAGS = -g -Wall -pthread -std=c++0x
 all: client 
 	@echo build complete
 
-client: client.cpp const.h
+client: client.cpp const.hpp
 	$(CC) $(CFLAGS) client.cpp -o client
 
 clean: 
