@@ -18,7 +18,7 @@
 #define NUMCLIENTS 10
 //Number of threads for client, minimum = 3
 //Need two threads for self, one for every other client
-#define NTHREADS NUMCLIENTS+1
+#define NTHREADS 4
 
 //Number of seconds between file checks
 #define UPDATETIME 1

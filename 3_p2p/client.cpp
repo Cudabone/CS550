@@ -33,6 +33,7 @@ int prompt();
 void port_to_string(in_port_t port, char *string);
 void read_filename(char *filename, int flag);
 int prompt_receive(int numpeers,char *peerid,std::list<std::string> recvports);
+void print_plist(const std::list<std::string> &plist);
 
 //Servers
 void client_user();
@@ -260,6 +261,7 @@ void *process_request()
 						if(*it != up_port)
 						{
 							int sfd;
+							int numpeersin = 0;
 							in_port_t nextport = *it;
 							//Socket over localhost to each node
 							sfd = socket(AF_INET,SOCK_STREAM,0);
@@ -286,19 +288,19 @@ void *process_request()
 							//Receive number of peers with file 
 							recv(sfd,(void *)numpeers,PEERRECVNUMCHARS,0); 
 							numpeersint += atoi(numpeers); 
+							numpeersin = atoi(numpeers);
 							//printf("Found %d more peers with file\n",to_int(numpeers));
 							//If there are peers to recv from
-							if(numpeersint != 0)
+							if(numpeersin != 0)
 							{
 								int temp;
-								for(temp = 0; temp < numpeersint; temp++)
+								for(temp = 0; temp < numpeersin; temp++)
 								{
 									char portno[MAXPORTCHARS+1] = {"0"};
 									//Receive port of each available client with file
 									recv(sfd,(void *)portno,MAXPORTCHARS+1,0);
 									std::string portstr(portno);
 									recvports.push_back(portstr);
-
 								}
 							}
 							close(sfd);
@@ -310,7 +312,7 @@ void *process_request()
 					int_to_string(numpeersint,numpeersout);
 					send(cfd,numpeersout,PEERRECVNUMCHARS,0);
 					//Return recv port list
-					//print_plist(recvports);
+					print_plist(recvports);
 					printf("Numpeersint: %u, Recvports size: %lu\n",numpeersint,recvports.size());
 					assert((int)numpeersint == (int)recvports.size());
 					while(!recvports.empty())
@@ -902,7 +904,7 @@ int prompt_receive(int numpeers,char *peerid,std::list<std::string> recvports)
 			fgets(str,MAXLINE,stdin);
 			peernum = atoi(str);
 			//printf("Numpeers: %d, Peernum chosen: %d\n",numpeers,peernum);
-			if(peernum < 0 || peernum > numpeers)
+			if(peernum < 0 || peernum >= numpeers)
 			{
 				valid = 0;
 				printf("Invalid input, try again\n");
@@ -922,4 +924,13 @@ int prompt_receive(int numpeers,char *peerid,std::list<std::string> recvports)
 		printf("Selected peerid: %s\n",peerid);
 	}
 	return input;
+}
+void print_plist(const std::list<std::string> &plist)
+{
+	std::cout << "Recv Ports: " << "[ ";
+	for(std::list<std::string>::const_iterator it = plist.begin(); it != plist.end(); it++)
+	{
+		std::cout << *it << " ";
+	}
+	std::cout << "]" << std::endl;
 }
