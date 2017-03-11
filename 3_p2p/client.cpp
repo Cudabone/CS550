@@ -125,17 +125,6 @@ void *process_request()
 		//printf("Connected\n");
 		//print_queries();
 
-		/*
-		size_t querysize = sizeof(query);
-		query *q = malloc(querysize);
-		//Receive command #
-		//1 = Register, 2 = lookup
-		printf("Waiting next query\n");
-
-		//Receive command from client to perform
-		if(recv(cfd,(void *)q,querysize,0) == 0)
-			break;
-			*/
 		char cmdstr[2];
 		char filename[MAXLINE];
 		uuid_t uuid;
@@ -158,12 +147,6 @@ void *process_request()
 		//Bind to 127.0.0.1 (Local)
 		sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 
-		//Initialize port list to 0;
-		/*
-		int j;
-		for(j = 0; j < MAXCLIENTS; j++)
-			strcpy(recvports[j],"0");
-			*/
 		std::list<std::string> recvports;
 
 		if(recv(cfd,(void *)cmdstr,2,0) == 0)
@@ -410,19 +393,6 @@ void client_user()
 					//printf("Generated UUID: %s\n",uuid);
 					add_query(uuid,ls_port);	
 
-					/*
-					   query q;
-					   size_t querysize = sizeof(query);
-
-					//Initialize query request
-					initialize_list(q.pathlist);
-					q.cmd = 1;
-					q.timetolive = TTL;
-					strcpy(q.found,"1");
-					strcpy(q.filename,filename);
-					add_client(q.pathlist);
-					*/
-
 					for(port_list::const_iterator it = plist.begin(); it != plist.end(); it++)
 					{
 						//create new socket
@@ -650,6 +620,7 @@ void remove_query(uuid_t uuid)
 		query *q = *it;
 		if(uuid_compare(uuid,q->uuid) == 0)
 		{
+			delete *it;
 			qlist.erase(it);
 			break;
 		}
