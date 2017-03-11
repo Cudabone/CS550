@@ -62,6 +62,12 @@ typedef struct
 	in_port_t port;
 } query;
 
+typedef struct
+{
+	std::string filename;
+	std::list<in_port_t> ports;
+} file_plist;
+
 //Query listing
 std::list<query *> qlist;
 //File listing
