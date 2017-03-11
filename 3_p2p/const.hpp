@@ -3,6 +3,12 @@
 #define MAXPORTCHARS 5
 #define MAXCONNECTIONS 2
 
+//Client Config
+//Number of seconds between file checks
+#define UPDATETIME 1
+//Size of file transfer chunk
+#define BUFFSIZE 512
+
 //TTL values
 #define TTL 50
 #define TTLCHARS 3
@@ -19,9 +25,3 @@
 //Number of threads for client, minimum = 3
 //Need two threads for self, one for every other client
 #define NTHREADS 4
-
-//Number of seconds between file checks
-#define UPDATETIME 1
-
-//Size of file transfer chunk
-#define BUFFSIZE 512
