@@ -20,9 +20,14 @@
 #include <thread>
 #include <functional>
 
+//TODO
+//Create separate directories for own and other files
+//Own files are added to own directory
+//Other files are added to other directory
 
 typedef std::list<in_port_t> port_list;
 
+void create_directories();
 bool read_setup(std::string filename,port_list &ports);
 bool valid_port_range(in_port_t port);
 void print_port_list(const port_list &ports);
@@ -58,6 +63,7 @@ bool file_check(char *filename);
 void add_file(char *filename);
 void file_checker();
 void remove_file(char *filename);
+void create_directories();
 
 typedef struct
 {
@@ -117,8 +123,6 @@ int main(int argc, char **argv)
 		return 4;
 	}
 	print_port_list(plist);
-	//struct sockaddr_in lsa;
-	//int lsfd;
 	if(!create_server())
 		return 4;
 	create_threads();
@@ -152,8 +156,6 @@ void *process_request()
 		char filename[MAXLINE];
 		uuid_t uuid;
 		uuid_string_t ustr;
-		//in_port_t plist[MAXPORTLIST];
-		//char recvports[MAXCLIENTS][MAXPORTCHARS+1];
 		unsigned int numpeersint = 0;
 		char numpeers[PEERRECVNUMCHARS];
 		int ttlval;
@@ -181,7 +183,6 @@ void *process_request()
 		int cmd = atoi(cmdstr);
 		//printf("Received command: %d\n",cmd);
 
-		
 		switch(cmd)
 		{
 			//Outgoing query
@@ -193,7 +194,6 @@ void *process_request()
 				up_port = (in_port_t)atoi(upportstr);
 				printf("Received query with UUID: %s, up-port %d\n",ustr,up_port);
 				//std::cout <<"Received query with UUID: "<<ustr<<", up-port: "<<up_port<<std::endl;
-				//printf("Received up_port: %d\n",up_port);
 
 				//Recv ttl value and decrement
 				recv(cfd,ttlstr,TTLCHARS,0);
@@ -205,22 +205,18 @@ void *process_request()
 
 				//Get file name and peerid(hostname)
 				recv(cfd,(void *)filename,MAXLINE,0);
-				//If alread processed query
 				//print_queries();
-				//printf("Result of have query: %d\n",have_query(uuid));
+				
+				//If already processed query
 				if(have_query(uuid))
 				{
-					//printf("Already have query, uuid: %s\n",ustr);
 					//Dont forward
-					//remove_query(uuid);		
 					//Send not found none
 					char numpeersout[PEERRECVNUMCHARS] = {"0"};
 					send(cfd,numpeersout,PEERRECVNUMCHARS,0);
-					//remove_query(uuid);
 				}
 				else if(ttlval == 0)
 				{
-					//printf("Adding query, uuid: %s\n",ustr);
 					add_query(uuid,up_port);
 					//Only check self for file
 					if(file_check(filename))
@@ -254,9 +250,7 @@ void *process_request()
 					{
 						numpeersint++;
 						char portno[MAXPORTCHARS+1] = {"0"};
-						//add_port(ls_port,plist);
 						int_to_string(ls_port,portno);
-						//strcpy(recvports[0],portno);
 						std::string portstr(portno);
 						recvports.push_back(portstr);
 						//printf("Client added: %s to port list\n",portno);
@@ -312,8 +306,7 @@ void *process_request()
 							close(sfd);
 						}
 					}
-					//close(sfd);
-					//Return numpeersint->char
+
 					char numpeersout[PEERRECVNUMCHARS] = {"0"};
 					int_to_string(numpeersint,numpeersout);
 					send(cfd,numpeersout,PEERRECVNUMCHARS,0);
@@ -334,8 +327,10 @@ void *process_request()
 				break;
 				//file retrieval
 			case 2:
-				send_file(cfd);
-				break;
+				{
+					send_file(cfd);
+					break;
+				}
 				//Invalidate file request
 			case 3:
 				{
@@ -343,7 +338,9 @@ void *process_request()
 					break;
 				}
 			default: 
-				break;
+				{
+					break;
+				}
 				//printf("Control should never reach here!");
 		}
 		close(cfd);
@@ -387,10 +384,6 @@ void client_user()
 		int numpeersint = 0;
 		char port[MAXPORTCHARS+1];
 		port_to_string(ls_port,port);
-		/*
-		char found[2];
-		int found_int;
-		*/
 		int ttlval = TTL;
 		char ttlstr[TTLCHARS];
 		int_to_string(ttlval,ttlstr);
@@ -403,7 +396,6 @@ void client_user()
 				{
 					//Read filename from user
 					read_filename(filename,0);
-					//printf("Read filename: %s\n",filename);
 					add_file(filename);
 					break;
 				}
@@ -462,9 +454,8 @@ void client_user()
 						}
 						close(sfd);
 					}
+
 					//print_plist(recvports);
-					//close socket
-					//close(sfd);
 					sfd = socket(AF_INET,SOCK_STREAM,0);
 					printf("Found %d total peers with file\n",numpeersint);
 					int recv = 0;
@@ -487,10 +478,8 @@ void client_user()
 					remove_query(uuid);
 					//print_queries();
 					close(sfd);
-					//sfd = socket(AF_INET,SOCK_STREAM,0);
 					break;
 				}
-				//TODO choose peer here and begin file transfer
 			//Close the client, unregister all files
 			case 3:
 				{
@@ -500,10 +489,8 @@ void client_user()
 		}
 	}while(cmd != 3);
 	done = 1;
-	//unlink(sa.sun_path);
 	close(sfd);
 	//Close client server as well
-	//unlink(csa.sun_path);
 	close(lsfd);
 }
 bool read_setup(std::string filename,port_list &ports)
@@ -856,8 +843,6 @@ void forward_invalidation(int cfd)
 	char filename[MAXLINE];
 	uuid_t uuid;
 	uuid_string_t ustr;
-	//in_port_t plist[MAXPORTLIST];
-	//char recvports[MAXCLIENTS][MAXPORTCHARS+1];
 	int ttlval;
 	char ttlstr[TTLCHARS];
 	in_port_t up_port;
@@ -958,7 +943,6 @@ int prompt()
 		printf("Enter the number for the desired command\n");
 		printf("1: Register a file for network\n");
 		printf("2: Look up / Retreive a file\n");
-		//printf("3: Retrieve a file\n");
 		printf("3: Exit\n");
 		//Read input
 		fgets(str,MAXLINE,stdin);
@@ -1008,8 +992,6 @@ void read_filename(char *filename, int flag)
 			//Close the file
 		}
 	}while(file == NULL && flag == 0);
-	//Close the file
-	//printf("\"%s\"\n",filename);
 }
 /* Set up a server to retrieve from other client
  * and receive the file filename from peerid
@@ -1061,9 +1043,7 @@ void retrieve(int sfd, char *filename)
 int prompt_receive(int numpeers,char *peerid,std::list<std::string> recvports)
 {
 	int valid = 1;
-	//char peers[NUMCLIENTS][HOSTNAMELENGTH];
 	int input;
-    //recvports[MAXCLIENTS][MAXPORTCHARS+1];
 
 	do{
 		valid = 1;
@@ -1096,7 +1076,6 @@ int prompt_receive(int numpeers,char *peerid,std::list<std::string> recvports)
 			char str[MAXLINE];
 			fgets(str,MAXLINE,stdin);
 			peernum = atoi(str);
-			//printf("Numpeers: %d, Peernum chosen: %d\n",numpeers,peernum);
 			if(peernum < 0 || peernum >= numpeers)
 			{
 				valid = 0;
@@ -1126,4 +1105,16 @@ void print_plist(const std::list<std::string> &plist)
 		std::cout << *it << " ";
 	}
 	std::cout << "]" << std::endl;
+}
+void create_directories()
+{
+	int err;
+	err = chdir("User");
+	if(err < 0)
+		mkdir("User",0777);
+	chdir("..");
+	err = chdir("Received");
+	if(err < 0)
+		mkdir("Retreived",0777);
+	chdir("..");
 }
