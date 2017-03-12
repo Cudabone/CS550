@@ -50,11 +50,14 @@ void add_query(uuid_t uuid, in_port_t port);
 void free_qlist();
 bool have_query(uuid_t uuid);
 void remove_query(uuid_t uuid);
+void send_invalidation(const char *fname);
+void forward_invalidation(int cfd);
 
 //Files
 bool file_check(char *filename);
 void add_file(char *filename);
 void file_checker();
+void remove_file(char *filename);
 
 typedef struct
 {
@@ -65,13 +68,13 @@ typedef struct
 typedef struct
 {
 	std::string filename;
-	std::list<in_port_t> ports;
-} file_plist;
+	time_t mtime;
+} file_entry;
 
 //Query listing
 std::list<query *> qlist;
 //File listing
-std::list<std::string> flist;
+std::list<file_entry *> flist;
 
 //Client Server Info
 int lsfd;
@@ -206,7 +209,7 @@ void *process_request()
 					//printf("Adding query, uuid: %s\n",ustr);
 					add_query(uuid,up_port);
 					//Only check self for file
-					if(file_check(filename) == 1)
+					if(file_check(filename))
 					{
 						numpeersint++;
 						assert(numpeersint == 1);
@@ -233,7 +236,7 @@ void *process_request()
 				{
 					//printf("Adding query, uuid: %s\n",ustr);
 					add_query(uuid,up_port);
-					if(file_check(filename) == 1)				
+					if(file_check(filename))				
 					{
 						numpeersint++;
 						char portno[MAXPORTCHARS+1] = {"0"};
@@ -319,7 +322,12 @@ void *process_request()
 			case 2:
 				send_file(cfd);
 				break;
-			//Client closing, unregister all files
+				//Invalidate file request
+			case 3:
+				{
+					forward_invalidation(cfd);
+					break;
+				}
 			default: 
 				break;
 				//printf("Control should never reach here!");
@@ -649,14 +657,24 @@ bool have_query(uuid_t uuid)
 }
 void add_file(char *filename)
 {
-	std::string file(filename);
-	flist.push_back(file);
+	int fd = open(filename,O_RDONLY);
+	if(fd < 0)
+	{
+		printf("File does not exist, cannot add\n");
+		return;
+	}
+	struct stat filestat;
+	fstat(fd,&filestat);
+	file_entry *fe = new file_entry;
+	fe->filename = std::string(filename);
+	fe->mtime = filestat.st_mtime;
+	flist.push_back(fe);
 }
 bool file_check(char *filename)
 {
-	for(std::list<std::string>::const_iterator it = flist.begin(); it != flist.end(); it++)
+	for(std::list<file_entry *>::const_iterator it = flist.begin(); it != flist.end(); it++)
 	{
-		if(filename == *it)
+		if(strcmp(filename,(*it)->filename.c_str()) == 0)
 			return true;
 	}
 	return false;
@@ -707,24 +725,213 @@ void send_file(int cfd)
  * or can no longer be opened. If so remove from central
  * indexing server
  */
+void remove_file(char *filename)
+{
+	for(std::list<file_entry *>::const_iterator it = flist.begin(); it != flist.end(); it++)
+	{
+		if(strcmp(filename,(*it)->filename.c_str()) == 0)
+		{
+			printf("Removing invalidated file: %s\n",(*it)->filename.c_str());
+			delete *it;
+			flist.erase(it);
+		}
+	}
+}
 void file_checker()
 {
 	while(!done)
 	{
 		FILE *file;
-		for(std::list<std::string>::iterator it = flist.begin(); it != flist.end(); it++)
+		int fd;
+		for(std::list<file_entry *>::iterator it = flist.begin(); it != flist.end(); it++)
 		{
-			file = fopen((const char *)(*it).c_str(),"r");
+			file = fopen((const char *)(*it)->filename.c_str(),"r");
 			if(file == NULL)
 			{
-				printf("File %s moved or deleted: Updating list\n",(*it).c_str());
+				printf("File %s moved or deleted: Updating list\n",(*it)->filename.c_str());
 				//Tell server to remove from list, if available
+				delete(*it);
 				flist.erase(it);
+				send_invalidation((*it)->filename.c_str());
 			}
 			else
+			{
 				fclose(file);
+				fd = open((const char *)(*it)->filename.c_str(),O_RDONLY);
+				if(fd < 0)
+				{
+					printf("File deleted, sending invalidation request\n");
+				}
+				else
+				{
+					struct stat filestat;
+					fstat(fd,&filestat);
+					//If the file has been modified
+					if(filestat.st_mtime > (*it)->mtime)
+					{
+						//Send invalidation request
+						send_invalidation((*it)->filename.c_str());
+					}
+				}
+			}
 		}
 		sleep(UPDATETIME);
+	}
+}
+void send_invalidation(const char *fname)
+{
+	struct sockaddr_in sa;
+	int sfd;
+	//Socket over localhost to central indexing server
+	sfd = socket(AF_INET,SOCK_STREAM,0);
+	if(sfd < 0)
+		perror("Socket");
+	//Set socket structure variables
+	int err;
+	//memset(&sa,0,sizeof(sa));
+	sa.sin_family = AF_INET;
+	//Bind to 127.0.0.1 (Local)
+	sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+	uuid_t uuid;
+	uuid_generate(uuid);
+	uuid_string_t ustr;
+	uuid_unparse(uuid,ustr);
+	//printf("Generated UUID: %s\n",uuid);
+	add_query(uuid,ls_port);	
+
+	char peerid[MAXPORTCHARS+1];
+	std::list<std::string> recvports;
+	char numpeers[PEERRECVNUMCHARS];
+	int numpeersint = 0;
+	char port[MAXPORTCHARS+1];
+	port_to_string(ls_port,port);
+	int ttlval = TTL;
+	char ttlstr[TTLCHARS];
+	int_to_string(ttlval,ttlstr);
+	char filename[MAXLINE];
+	strcpy(filename,fname);
+
+	for(port_list::const_iterator it = plist.begin(); it != plist.end(); it++)
+	{
+		//create new socket
+		sfd = socket(AF_INET,SOCK_STREAM,0);
+		if(sfd < 0)
+			perror("Socket");
+		in_port_t nextport = *it;
+
+		//Start request to each server
+		sa.sin_port = htons(nextport);
+		err = connect(sfd,(const struct sockaddr *)&sa,sizeof(sa));
+		if(err < 0)
+			perror("Connect (User)");
+		//Send Lookup Command and filename
+		send(sfd,"3",2,0);
+		send(sfd,(void *)ustr,sizeof(uuid_string_t),0);
+		send(sfd,port,MAXPORTCHARS+1,0);
+		send(sfd,ttlstr,TTLCHARS,0);
+		send(sfd,filename,MAXLINE,0);
+		close(sfd);
+	}
+}
+void forward_invalidation(int cfd)
+{
+	struct sockaddr_in sa;
+	sa.sin_family = AF_INET;
+	//Bind to 127.0.0.1 (Local)
+	sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+	char filename[MAXLINE];
+	uuid_t uuid;
+	uuid_string_t ustr;
+	//in_port_t plist[MAXPORTLIST];
+	//char recvports[MAXCLIENTS][MAXPORTCHARS+1];
+	unsigned int numpeersint = 0;
+	char numpeers[PEERRECVNUMCHARS];
+	int ttlval;
+	char ttlstr[TTLCHARS];
+	in_port_t up_port;
+	char upportstr[MAXPORTCHARS+1] = {"0"};
+
+	recv(cfd,ustr,sizeof(uuid_string_t),0);
+	uuid_parse(ustr,uuid);
+	recv(cfd,upportstr,MAXPORTCHARS+1,0);
+	up_port = (in_port_t)atoi(upportstr);
+	printf("Received invalidation request with UUID: %s, up-port %d\n",ustr,up_port);
+	//std::cout <<"Received query with UUID: "<<ustr<<", up-port: "<<up_port<<std::endl;
+
+	//Recv ttl value and decrement
+	recv(cfd,ttlstr,TTLCHARS,0);
+	ttlval = atoi(ttlstr);
+	ttlval--;
+	//printf("Received TTL, str: %s, val: %d\n",ttlstr,ttlval);
+	char newttlstr[TTLCHARS];
+	int_to_string(ttlval,newttlstr);
+	//Get file name and peerid(hostname)
+	recv(cfd,(void *)filename,MAXLINE,0);
+
+	if(have_query(uuid))
+	{
+		//Do nothing
+	}
+	else if(ttlval == 0)
+	{
+		//printf("Adding query, uuid: %s\n",ustr);
+		add_query(uuid,up_port);
+		//Only check self for file
+		if(file_check(filename))
+		{
+			remove_file(filename);
+		}
+		//We dont have the file
+		remove_query(uuid);
+		printf("Completed query, uuid: %s\n",ustr);
+		//std::cout <<"Completed query, UUID: "<<ustr<<std::endl; 
+	}
+	//Forward check to all client if not handled already
+	else
+	{
+		//printf("Adding query, uuid: %s\n",ustr);
+		add_query(uuid,up_port);
+		if(file_check(filename))				
+		{
+			remove_file(filename);
+		}
+		//Forward to all clients
+		for(port_list::const_iterator it = plist.begin(); it != plist.end(); it++)
+		{
+			if(*it != up_port)
+			{
+				int sfd;
+				int err;
+				int numpeersin = 0;
+				in_port_t nextport = *it;
+				//Socket over localhost to each node
+				sfd = socket(AF_INET,SOCK_STREAM,0);
+				if(sfd < 0)
+					perror("Socket");
+
+				printf("Forwarding invalidation to port: %d\n",nextport);
+				//Start request to each server
+				char port[MAXPORTCHARS+1] = {"0"};
+				int_to_string(ls_port,port);
+				sa.sin_port = htons(nextport);
+				err = connect(sfd,(const struct sockaddr *)&sa,sizeof(sa));
+				if(err < 0)
+					perror("Connect (Server)");
+
+				//Send Lookup Command and filename
+				send(sfd,"3",2,0);
+				send(sfd,(void *)ustr,sizeof(uuid_string_t),0);
+				send(sfd,port,MAXPORTCHARS+1,0);
+				send(sfd,ttlstr,TTLCHARS,0);
+				send(sfd,filename,MAXLINE,0);
+				close(sfd);
+			}
+		}
+		remove_query(uuid);
+		printf("Completed Query!\n");
+		//print_queries();
 	}
 }
 /* Prompt the user for the command they would like to do,
