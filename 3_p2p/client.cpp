@@ -771,6 +771,7 @@ void file_checker()
 					{
 						//Send invalidation request
 						send_invalidation((*it)->filename.c_str());
+						(*it)->mtime = filestat.st_mtime;
 					}
 				}
 			}
@@ -800,10 +801,7 @@ void send_invalidation(const char *fname)
 	//printf("Generated UUID: %s\n",uuid);
 	add_query(uuid,ls_port);	
 
-	char peerid[MAXPORTCHARS+1];
 	std::list<std::string> recvports;
-	char numpeers[PEERRECVNUMCHARS];
-	int numpeersint = 0;
 	char port[MAXPORTCHARS+1];
 	port_to_string(ls_port,port);
 	int ttlval = TTL;
@@ -846,8 +844,6 @@ void forward_invalidation(int cfd)
 	uuid_string_t ustr;
 	//in_port_t plist[MAXPORTLIST];
 	//char recvports[MAXCLIENTS][MAXPORTCHARS+1];
-	unsigned int numpeersint = 0;
-	char numpeers[PEERRECVNUMCHARS];
 	int ttlval;
 	char ttlstr[TTLCHARS];
 	in_port_t up_port;
@@ -904,7 +900,6 @@ void forward_invalidation(int cfd)
 			{
 				int sfd;
 				int err;
-				int numpeersin = 0;
 				in_port_t nextport = *it;
 				//Socket over localhost to each node
 				sfd = socket(AF_INET,SOCK_STREAM,0);
