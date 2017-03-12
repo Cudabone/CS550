@@ -22,8 +22,9 @@
 
 //TODO
 //Create separate directories for own and other files
-//Own files are added to own directory
-//Other files are added to other directory
+//Own files are added to User directory
+//Other files are added to Downloaded directory
+//Figure out separate directories, must search both directories to add a file
 
 typedef std::list<in_port_t> port_list;
 
@@ -65,12 +66,14 @@ void file_checker();
 void remove_file(char *filename);
 void create_directories();
 
+//Query, including UUID and a port number for requester
 typedef struct
 {
 	uuid_t uuid;
 	in_port_t port;
 } query;
 
+//File entries, including filename and modification time
 typedef struct
 {
 	std::string filename;
@@ -942,7 +945,7 @@ int prompt()
 		valid = 1;
 		printf("Enter the number for the desired command\n");
 		printf("1: Register a file for network\n");
-		printf("2: Look up / Retreive a file\n");
+		printf("2: Look up / Retrieve a file\n");
 		printf("3: Exit\n");
 		//Read input
 		fgets(str,MAXLINE,stdin);
@@ -970,7 +973,7 @@ void read_filename(char *filename, int flag)
 		if(flag == 0)
 			printf("Enter the filename to register\n");
 		else 
-			printf("Enter the filename to retreive\n");	
+			printf("Enter the filename to retrieve\n");	
 		//Read input
 		fgets(filename,MAXLINE,stdin);
 		char *buf;
@@ -1011,6 +1014,8 @@ void retrieve(int sfd, char *filename)
 	int totalb = atoi(filesize);
 	//Write to a new file
 	printf("Display file '%s'",filename);
+	//Set file to read only
+	chmod(filename,S_IRUSR | S_IRGRP | S_IROTH);
 	if(totalb < 1000)
 		printf("\n");
 	else
@@ -1113,8 +1118,8 @@ void create_directories()
 	if(err < 0)
 		mkdir("User",0777);
 	chdir("..");
-	err = chdir("Received");
+	err = chdir("Downloaded");
 	if(err < 0)
-		mkdir("Retreived",0777);
+		mkdir("Downloaded",0777);
 	chdir("..");
 }
