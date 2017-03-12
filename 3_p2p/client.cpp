@@ -83,12 +83,16 @@ in_port_t ls_port;
 port_list plist;
 
 int done = 0;
+bool push = false;
 int main(int argc, char **argv)
 {
-	if(argc != 3)
+	if(argc != 4)
 	{
 		//std::cout << "Usage: ./client <portno> <setupfile-path>" << std::endl;
-		printf("Usage: ./client <portno> <setupfile-path>\n");
+		printf("Usage: ./client <portno> <setupfile-path> <update-option>\n");
+		printf("\tUpdate option(s):\n");
+		printf("\t\t--push\n\t\t\tPush updates to other clients\n");
+		printf("\t\t--pull\n\t\t\tPull updates from other clients\n");
 		return 1;
 	}
 	int port = atoi(argv[1]);
@@ -100,8 +104,18 @@ int main(int argc, char **argv)
 	}
 	ls_port = (in_port_t)atoi(argv[1]);
 	std::string setup_file = argv[2];
+	std::string option = argv[3];
 	if(!read_setup(setup_file,plist))
 		return 3;
+	if(option == std::string("--push"))
+		push = true;
+	else if(option == std::string("--pull"))
+		push = false;
+	else
+	{
+		printf("Choose an update option\n");
+		return 4;
+	}
 	print_port_list(plist);
 	//struct sockaddr_in lsa;
 	//int lsfd;
