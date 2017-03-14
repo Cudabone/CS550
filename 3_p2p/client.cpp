@@ -25,6 +25,19 @@
 //Own files are added to User directory
 //Other files are added to Downloaded directory
 //Figure out separate directories, must search both directories to add a file
+//
+//TODO
+//Also must pass around the origin ID of the file (port_no), will also need to
+//be stored
+
+//TODO NOTES
+//When a file is downloaded, must also receive origin ID, and TTR value, and
+//modification time, sent by server who is not origin
+//Checker must see if TTR expired, when it is it will poll the server to check
+//if an update is needed.
+//Perhaps keep a list of files which need to be updated. Client can then
+//choose to update specific/all files perhaps.
+//
 
 typedef std::list<in_port_t> port_list;
 
@@ -65,6 +78,7 @@ void add_file(char *filename);
 void file_checker();
 void remove_file(char *filename);
 void create_directories();
+bool check_mtime(char *filename,time_t mtime);
 
 //Query, including UUID and a port number for requester
 typedef struct
@@ -80,10 +94,21 @@ typedef struct
 	time_t mtime;
 } file_entry;
 
+//File entry for pull approach, filename, modification time, and origin port
+typedef struct
+{
+	std::string filename;
+	time_t mtime;
+	in_port_t origin;
+	int TTR;
+} file_entry_pull;
+
 //Query listing
 std::list<query *> qlist;
 //File listing
 std::list<file_entry *> flist;
+//Update listing
+std::list<file_entry_pull *> ulist;
 
 //Client Server Info
 int lsfd;
@@ -338,6 +363,30 @@ void *process_request()
 			case 3:
 				{
 					forward_invalidation(cfd);
+					break;
+				}
+				//Recv Update Check
+			case 4:
+				{
+					char mtimestr[MTIMECHARS] = {"0"};
+					time_t mtime;
+					recv(cfd,filename,MAXLINE,0);
+					recv(cfd,mtimestr,MTIMECHARS,0);
+					mtime = (time_t)atoi(mtimestr);
+					if(check_mtime(filename,mtime))
+					{
+						//If file needs to be updated
+						send(cfd,"1",2,0);
+					}
+					else
+					{
+						//File does not need to be updated
+						send(cfd,"0",2,0);
+						int TTR = TTRVAL;
+						char ttrstr[TTRCHARS+1] = {"0"};
+						int_to_string(TTRVAL,ttrstr);
+						send(cfd,ttrstr,TTRCHARS+1,0);
+					}
 					break;
 				}
 			default: 
@@ -782,6 +831,23 @@ void file_checker()
 		}
 		sleep(UPDATETIME);
 	}
+}
+//Compare the modification of filename to mtime
+//If mtime is older, returns true
+//else return false
+bool check_mtime(char *filename,time_t mtime)
+{
+	for(std::list<file_entry *>::const_iterator it = flist.begin(); it != flist.end(); it++)
+	{
+		if(strcmp((*it)->filename.c_str(),filename) == 0)
+		{
+			if((*it)->mtime > mtime)
+				return true;
+			return false;
+		}
+	}
+	//Default that file is most up to date, even if deleted by origin
+	return false;
 }
 void send_invalidation(const char *fname)
 {

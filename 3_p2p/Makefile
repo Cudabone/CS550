@@ -4,7 +4,7 @@ CC = clang++
 CFLAGS = -g -Wall -pthread -std=c++0x
 
 all: client 
-	@echo build complete
+	@echo Build Complete
 
 client: client.cpp const.hpp
 	$(CC) $(CFLAGS) client.cpp -o client

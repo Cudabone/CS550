@@ -25,3 +25,11 @@
 //Number of threads for client, minimum = 3
 //Need two threads for self, one for every other client
 #define NTHREADS 4
+
+//Time-to-refresh value, files expire after this many minutes
+//MAX TTR 1440 (1-day)
+#define TTRVAL 5
+//Number of characters to send
+#define TTRCHARS 5
+
+#define MTIMECHARS sizeof(int)+1
