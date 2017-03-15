@@ -10,6 +10,8 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <sys/time.h>
+#include <cmath>
 
 //Network Includes
 #include <sys/socket.h>
@@ -20,65 +22,21 @@
 #include <thread>
 #include <functional>
 
-//TODO
-//Create separate directories for own and other files
-//Own files are added to User directory
-//Other files are added to Downloaded directory
-//Figure out separate directories, must search both directories to add a file
-//
-//TODO
-//Also must pass around the origin ID of the file (port_no), will also need to
-//be stored
-
 //TODO NOTES
 //When a file is downloaded, must also receive origin ID, and TTR value, and
 //modification time, sent by server who is not origin
-//Checker must see if TTR expired, when it is it will poll the server to check
-//if an update is needed.
-//Perhaps keep a list of files which need to be updated. Client can then
-//choose to update specific/all files perhaps.
 //
+//Directories: "<portno> user" "<portno> downloaded"
+//Downloaded files will be auto-registered
+//Only can register user files
+//
+//TODO 
+//-Modify file checker to check outdated files
+//-Add mtime of source, mtime of receiving
+//-Send file update
+//-Regular requests with both lists
 
 typedef std::list<in_port_t> port_list;
-
-void create_directories();
-bool read_setup(std::string filename,port_list &ports);
-bool valid_port_range(in_port_t port);
-void print_port_list(const port_list &ports);
-void create_threads();
-void int_to_string(int val,char *string);
-void send_file(int cfd);
-int prompt();
-void port_to_string(in_port_t port, char *string);
-void read_filename(char *filename, int flag);
-int prompt_receive(int numpeers,char *peerid,std::list<std::string> recvports);
-void print_plist(const std::list<std::string> &plist);
-
-//Servers
-void client_user();
-bool create_server();
-void *process_request();
-void retrieve(int sfd, char *filename);
-
-//Multithreading functions
-void *distribute_threads(void *i);
-void create_threads(void);
-
-//Queries
-void add_query(uuid_t uuid, in_port_t port);
-void free_qlist();
-bool have_query(uuid_t uuid);
-void remove_query(uuid_t uuid);
-void send_invalidation(const char *fname);
-void forward_invalidation(int cfd);
-
-//Files
-bool file_check(char *filename);
-void add_file(char *filename);
-void file_checker();
-void remove_file(char *filename);
-void create_directories();
-bool check_mtime(char *filename,time_t mtime);
 
 //Query, including UUID and a port number for requester
 typedef struct
@@ -101,20 +59,71 @@ typedef struct
 	time_t mtime;
 	in_port_t origin;
 	int TTR;
-} file_entry_pull;
+} file_entry_dl;
+
+void create_directories();
+bool read_setup(std::string filename,port_list &ports);
+bool valid_port_range(in_port_t port);
+void print_port_list(const port_list &ports);
+void create_threads();
+void int_to_string(int val,char *string);
+void send_file(int cfd);
+int prompt();
+void port_to_string(in_port_t port, char *string);
+void read_filename(char *filename, int flag);
+int prompt_receive(int numpeers,char *peerid,std::list<std::string> recvports);
+void print_plist(const std::list<std::string> &plist);
+bool exit_cmd(int cmd);
+int usr_dl_prompt();
+
+//Servers
+void client_user();
+bool create_server();
+void *process_request();
+void retrieve(int sfd, char *filename);
+void update();
+void send_update_request(file_entry_dl *fe,time_t ctime);
+
+//Multithreading functions
+void *distribute_threads(void *i);
+void create_threads(void);
+
+//Queries
+void add_query(uuid_t uuid, in_port_t port);
+void free_qlist();
+bool have_query(uuid_t uuid);
+void remove_query(uuid_t uuid);
+void send_invalidation(const char *fname);
+void forward_invalidation(int cfd);
+
+//Files
+bool file_check(char *filename);
+void add_file(char *filename);
+void file_checker();
+void remove_file(char *filename);
+void create_directories();
+bool check_mtime(char *filename,time_t mtime);
+void add_dl_file(char *filename,in_port_t origin,int TTR);
+void delete_files();
+
 
 //Query listing
 std::list<query *> qlist;
 //File listing
 std::list<file_entry *> flist;
-//Update listing
-std::list<file_entry_pull *> ulist;
+//Update listing (Downloaded files list)
+std::list<file_entry_dl *> ulist;
 
 //Client Server Info
 int lsfd;
 struct sockaddr_in lsa;
 in_port_t ls_port;
 port_list plist;
+
+//Hostname and directories for each client
+std::string hostname; //Port number as identifier
+std::string usrdir;
+std::string dldir;
 
 int done = 0;
 bool push = false;
@@ -137,6 +146,7 @@ int main(int argc, char **argv)
 		return 2;
 	}
 	ls_port = (in_port_t)atoi(argv[1]);
+	hostname = std::string(argv[1]);
 	std::string setup_file = argv[2];
 	std::string option = argv[3];
 	if(!read_setup(setup_file,plist))
@@ -150,12 +160,13 @@ int main(int argc, char **argv)
 		printf("Choose an update option\n");
 		return 4;
 	}
+	create_directories();
 	print_port_list(plist);
 	if(!create_server())
 		return 4;
 	create_threads();
 	free_qlist();
-
+	delete_files();
 }
 //Process a request from a client, or client file checker
 void *process_request()
@@ -296,7 +307,7 @@ void *process_request()
 							if(sfd < 0)
 								perror("Socket");
 
-							printf("Forwarding request to port: %d\n",nextport);
+							//printf("Forwarding request to port: %d\n",nextport);
 							//Start request to each server
 							char port[MAXPORTCHARS+1] = {"0"};
 							int_to_string(ls_port,port);
@@ -357,6 +368,10 @@ void *process_request()
 			case 2:
 				{
 					send_file(cfd);
+					int TTR = TTRVAL;
+					char ttrstr[TTRCHARS] = {"0"};
+					int_to_string(TTR,ttrstr);
+					send(cfd,ttrstr,TTRCHARS,0);
 					break;
 				}
 				//Invalidate file request
@@ -384,7 +399,7 @@ void *process_request()
 						send(cfd,"0",2,0);
 						int TTR = TTRVAL;
 						char ttrstr[TTRCHARS+1] = {"0"};
-						int_to_string(TTRVAL,ttrstr);
+						int_to_string(TTR,ttrstr);
 						send(cfd,ttrstr,TTRCHARS+1,0);
 					}
 					break;
@@ -424,11 +439,12 @@ void client_user()
 	//Bind to 127.0.0.1 (Local)
 	sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 
-	int cmd;
-	do{
+	int cmd = prompt();
+	bool exit = exit_cmd(cmd);
+	while(!exit)
+	{
 		//Get command from user
 
-		cmd = prompt();
 		char filename[MAXLINE];
 		char peerid[MAXPORTCHARS+1];
 		std::list<std::string> recvports;
@@ -447,8 +463,33 @@ void client_user()
 			case 1: 
 				{
 					//Read filename from user
+					/*
+					int input = usr_dl_prompt();
+					if(input == 0)
+					{
+						if(chdir(usrdir.c_str()) < 0)
+						{
+							printf("Missing user directory, cancelling\n");
+							break;
+						}
+					}
+					else
+					{
+						if(chdir(dldir.c_str()) < 0)
+						{
+							printf("Missing download directory, cancelling\n");
+							break;
+						}
+					}
+					*/
+					if(chdir(usrdir.c_str()) < 0)
+					{
+						printf("Missing user directory, cancelling\n");
+						break;
+					}
 					read_filename(filename,0);
 					add_file(filename);
+					chdir("..");
 					break;
 				}
 			//Do a lookup and then can retrieve
@@ -510,11 +551,11 @@ void client_user()
 					//print_plist(recvports);
 					sfd = socket(AF_INET,SOCK_STREAM,0);
 					printf("Found %d total peers with file\n",numpeersint);
-					int recv = 0;
+					int input = 0;
 					if(numpeersint != 0)
-						recv = prompt_receive(numpeersint,peerid,recvports);
+						input = prompt_receive(numpeersint,peerid,recvports);
 					//Call recv file here
-					if(recv == 1)
+					if(input == 1)
 					{
 						//TODO may not need new connection if in list
 						in_port_t port = (in_port_t)atoi(peerid);
@@ -524,7 +565,11 @@ void client_user()
 							perror("Connect (File Receive)");
 						send(sfd,"2",2,0);
 						retrieve(sfd,filename);
-						printf("Would have received file here\n");
+						char ttrstr[TTRCHARS] = {"0"};
+						recv(sfd,ttrstr,TTRCHARS,0);
+						int TTR = atoi(ttrstr);
+						add_dl_file(filename,port,TTR);
+						//printf("Would have received file here\n");
 						printf("File transfer done!\n");
 					}
 					remove_query(uuid);
@@ -532,14 +577,18 @@ void client_user()
 					close(sfd);
 					break;
 				}
-			//Close the client, unregister all files
+				//Check for updating files
 			case 3:
 				{
+					update();
 					//TODO we can spread word to close all servers
 					break;
 				}
 		}
-	}while(cmd != 3);
+		//Get next input, check if exiting
+		cmd = prompt();
+		exit = exit_cmd(cmd);
+	}
 	done = 1;
 	close(sfd);
 	//Close client server as well
@@ -708,6 +757,7 @@ bool have_query(uuid_t uuid)
 	}
 	return false;
 }
+//Adds file to the user file list, not downloaded
 void add_file(char *filename)
 {
 	int fd = open(filename,O_RDONLY);
@@ -723,6 +773,33 @@ void add_file(char *filename)
 	fe->mtime = filestat.st_mtime;
 	flist.push_back(fe);
 }
+void add_dl_file(char *filename,in_port_t origin,int TTR)
+{
+	if(chdir(dldir.c_str()) < 0)
+	{
+		printf("Download directory missing, not adding it to the list\n");
+		return;
+	}
+	chdir("..");
+	file_entry_dl *fe = new file_entry_dl;
+	fe->filename = std::string(filename);
+	fe->origin = origin;
+	fe->TTR = TTR;
+	ulist.push_back(fe);
+}
+void delete_files()
+{
+	while(!flist.empty())
+	{
+		delete(flist.front());
+		flist.pop_front();
+	}
+	while(!ulist.empty())
+	{
+		delete(ulist.front());
+		flist.pop_front();
+	}
+}
 bool file_check(char *filename)
 {
 	for(std::list<file_entry *>::const_iterator it = flist.begin(); it != flist.end(); it++)
@@ -731,6 +808,69 @@ bool file_check(char *filename)
 			return true;
 	}
 	return false;
+}
+//Checks if any files need updating, requests updates for 
+//all files, and updates the listing.
+void update()
+{
+	for(std::list<file_entry_dl *>::iterator it = ulist.begin(); it != ulist.end(); it++)
+	{
+		file_entry_dl *fe = *it;
+		struct timeval tv;	
+		gettimeofday(&tv,NULL);
+		time_t ctime = tv.tv_sec;
+		if((int)floor(((double)(ctime - fe->mtime)/60)) >= fe->TTR)
+		{
+			//request update
+			send_update_request(fe,ctime);
+		}
+	}
+}
+//send update request to socket cfd
+void send_update_request(file_entry_dl *fe,time_t ctime)
+{
+	struct sockaddr_in ca;
+	int cfd;
+	cfd = socket(AF_INET,SOCK_STREAM,0);
+	if(cfd < 0)
+	{
+		perror("Socket");
+		return;
+	}
+	ca.sin_family = AF_INET;
+	ca.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	ca.sin_port = htons(fe->origin);
+	//TODO create socket here
+	char mtimestr[MTIMECHARS] = {"0"};
+	char updatestr[2] = {"0"};
+	int update;
+	int_to_string(fe->mtime,mtimestr);
+	int err = connect(cfd,(const struct sockaddr *)&ca,sizeof(ca));
+	if (err < 0)
+	{
+		perror("Connect (User Update)\n");
+		return;
+	}
+
+	send(cfd,"4",2,0);
+	send(cfd,fe->filename.c_str(),MAXLINE,0);
+	send(cfd,mtimestr,MTIMECHARS,0);
+	recv(cfd,updatestr,2,0);
+	update = atoi(updatestr);
+	if(update == 1)
+	{
+		//TODO
+		//fileupdate
+	}
+	else
+	{
+		char ttrstr[TTRCHARS] = {"0"};
+		int TTR;
+		//TTR update
+		recv(cfd,ttrstr,TTRCHARS,0);
+		fe->TTR = atoi(ttrstr);
+		fe->mtime = ctime;
+	}
 }
 void send_file(int cfd)
 {
@@ -746,6 +886,9 @@ void send_file(int cfd)
 		//Send file
 		//printf("File would be sent here\n");
 		//Open the file
+		//if(chdir(usrdir.c_str()) < 0)
+			//printf("Missing user directory, using default directory\n");
+
 		int fd = open(filename,O_RDONLY); 
 		if(fd < 0)
 		{
@@ -1012,13 +1155,62 @@ int prompt()
 		printf("Enter the number for the desired command\n");
 		printf("1: Register a file for network\n");
 		printf("2: Look up / Retrieve a file\n");
-		printf("3: Exit\n");
+		if(push)
+		{
+			printf("3: Exit\n");
+		}
+		else
+		{
+			printf("3: Update downloaded files\n");
+			printf("4: Exit\n");
+		}
 		//Read input
 		fgets(str,MAXLINE,stdin);
 		//Parse input to integer
 		input = atoi(str);
 		//Ensure input number is valid
-		if(input > 3 || input < 1 || input == 0)
+		if(push)
+		{
+			if(input > 3 || input < 1 || input == 0)
+			{
+				valid = 0;
+				printf("Invalid input, try again\n");
+			}
+		}
+		else
+		{
+			if(input > 4 || input < 1 || input == 0)
+			{
+				valid = 0;
+				printf("Invalid input, try again\n");
+			}
+		}
+	}while(!valid);
+	return input;
+}
+bool exit_cmd(int cmd)
+{
+	if((push && cmd == 3) || (!push && cmd == 4))
+	{
+		return true;	
+	}
+	return false;
+}
+int usr_dl_prompt()
+{
+	int input;
+	char str[MAXLINE];
+	int valid;
+	do
+	{
+		valid = 1;
+		printf("Register a User file or Downloaded file?\n");
+		printf("0: User file\n");
+		printf("1: Downloaded file\n");
+		//read input
+		fgets(str,MAXLINE,stdin);
+		input = atoi(str);
+		if(input < 0 || input > 1)
 		{
 			valid = 0;
 			printf("Invalid input, try again\n");
@@ -1075,13 +1267,14 @@ void retrieve(int sfd, char *filename)
 	//File size and remaining bytes
 	int rem = atoi(filesize);
 	char buf[BUFFSIZE];
+	if(chdir(dldir.c_str()) < 0)
+		printf("Download directory missing, using default directory\n");
 	FILE *file = fopen(filename,"w");
 	int recvb = 0;
 	int totalb = atoi(filesize);
 	//Write to a new file
 	printf("Display file '%s'",filename);
 	//Set file to read only
-	chmod(filename,S_IRUSR | S_IRGRP | S_IROTH);
 	if(totalb < 1000)
 		printf("\n");
 	else
@@ -1096,13 +1289,12 @@ void retrieve(int sfd, char *filename)
 			fwrite(buf,sizeof(char),recvb,stdout);
 		}
 	}
+	chmod(filename,S_IRUSR | S_IRGRP | S_IROTH);
 	printf("File received\n");
+
 	//Display file if less than 1KB
 	fclose(file);
 	file = fopen(filename,"r");
-	if(atoi(filesize) < 1000)
-	{
-	}
 	fclose(file);
 	//unlink(sa.sun_path);
 	close(sfd);
@@ -1179,13 +1371,17 @@ void print_plist(const std::list<std::string> &plist)
 }
 void create_directories()
 {
+	usrdir = hostname+"_User";
+	dldir = hostname+"_Downloaded";
 	int err;
-	err = chdir("User");
+	err = chdir(usrdir.c_str());
 	if(err < 0)
-		mkdir("User",0777);
-	chdir("..");
-	err = chdir("Downloaded");
+		mkdir(usrdir.c_str(),0777);
+	else
+		chdir("..");
+	err = chdir(dldir.c_str());
 	if(err < 0)
-		mkdir("Downloaded",0777);
-	chdir("..");
+		mkdir(dldir.c_str(),0777);
+	else 
+		chdir("..");
 }

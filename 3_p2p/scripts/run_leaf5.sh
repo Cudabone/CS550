@@ -1,3 +1,3 @@
 #!/bin/bash
-echo ./client 10005 ../config/star2.txt
-./client 10005 ../config/star2.txt
+echo ./client 10005 ../config/star2.txt --push
+./client 10005 ../config/star2.txt --push
