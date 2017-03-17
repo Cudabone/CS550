@@ -31,9 +31,9 @@
 //Only can register user files
 //
 //TODO 
-//-Modify file checker to check outdated files
-//-Add mtime of source, mtime of receiving
-//-Send file update
+//-Modify file checker to check outdated files - DONE CHECK
+//-Add mtime of source, mtime of receiving - DONE CHECK
+//-Send file update - DONE CHECK
 //-Regular requests with both lists
 
 typedef std::list<in_port_t> port_list;
@@ -56,7 +56,8 @@ typedef struct
 typedef struct
 {
 	std::string filename;
-	time_t mtime;
+	time_t rtime; //retrieve time
+	time_t mtime; //modification time
 	in_port_t origin;
 	int TTR;
 } file_entry_dl;
@@ -80,7 +81,7 @@ int usr_dl_prompt();
 void client_user();
 bool create_server();
 void *process_request();
-void retrieve(int sfd, char *filename);
+void retrieve_file(int sfd, const char *filename, in_port_t port);
 void update();
 void send_update_request(file_entry_dl *fe,time_t ctime);
 
@@ -103,7 +104,7 @@ void file_checker();
 void remove_file(char *filename);
 void create_directories();
 bool check_mtime(char *filename,time_t mtime);
-void add_dl_file(char *filename,in_port_t origin,int TTR);
+void add_dl_file(const char *filename,in_port_t origin,time_t rtime,time_t mtime, int TTR);
 void delete_files();
 
 
@@ -368,10 +369,6 @@ void *process_request()
 			case 2:
 				{
 					send_file(cfd);
-					int TTR = TTRVAL;
-					char ttrstr[TTRCHARS] = {"0"};
-					int_to_string(TTR,ttrstr);
-					send(cfd,ttrstr,TTRCHARS,0);
 					break;
 				}
 				//Invalidate file request
@@ -392,6 +389,7 @@ void *process_request()
 					{
 						//If file needs to be updated
 						send(cfd,"1",2,0);
+						send_file(cfd);
 					}
 					else
 					{
@@ -564,11 +562,7 @@ void client_user()
 						if(err < 0)
 							perror("Connect (File Receive)");
 						send(sfd,"2",2,0);
-						retrieve(sfd,filename);
-						char ttrstr[TTRCHARS] = {"0"};
-						recv(sfd,ttrstr,TTRCHARS,0);
-						int TTR = atoi(ttrstr);
-						add_dl_file(filename,port,TTR);
+						retrieve_file(sfd,filename,port);
 						//printf("Would have received file here\n");
 						printf("File transfer done!\n");
 					}
@@ -773,7 +767,7 @@ void add_file(char *filename)
 	fe->mtime = filestat.st_mtime;
 	flist.push_back(fe);
 }
-void add_dl_file(char *filename,in_port_t origin,int TTR)
+void add_dl_file(const char *filename,in_port_t origin,time_t rtime,time_t mtime, int TTR)
 {
 	if(chdir(dldir.c_str()) < 0)
 	{
@@ -783,6 +777,8 @@ void add_dl_file(char *filename,in_port_t origin,int TTR)
 	chdir("..");
 	file_entry_dl *fe = new file_entry_dl;
 	fe->filename = std::string(filename);
+	fe->rtime = rtime;
+	fe->mtime = mtime;
 	fe->origin = origin;
 	fe->TTR = TTR;
 	ulist.push_back(fe);
@@ -819,7 +815,7 @@ void update()
 		struct timeval tv;	
 		gettimeofday(&tv,NULL);
 		time_t ctime = tv.tv_sec;
-		if((int)floor(((double)(ctime - fe->mtime)/60)) >= fe->TTR)
+		if((int)floor(((double)(ctime - fe->rtime)/60)) >= fe->TTR)
 		{
 			//request update
 			send_update_request(fe,ctime);
@@ -861,16 +857,17 @@ void send_update_request(file_entry_dl *fe,time_t ctime)
 	{
 		//TODO
 		//fileupdate
+		retrieve_file(cfd,fe->filename.c_str(),fe->origin);
 	}
 	else
 	{
 		char ttrstr[TTRCHARS] = {"0"};
-		int TTR;
 		//TTR update
 		recv(cfd,ttrstr,TTRCHARS,0);
 		fe->TTR = atoi(ttrstr);
-		fe->mtime = ctime;
+		fe->rtime = ctime;
 	}
+	close(cfd);
 }
 void send_file(int cfd)
 {
@@ -911,6 +908,16 @@ void send_file(int cfd)
 			close(cfd);
 			return;
 		}
+		char mtimestr[MTIMECHARS] = {"0"};
+		time_t mtime = filestat.st_mtime;
+		int_to_string(mtime,mtimestr);
+		send(cfd,mtimestr,MTIMECHARS,0);
+
+		int TTR = TTRVAL;
+		char ttrstr[TTRCHARS] = {"0"};
+		int_to_string(TTR,ttrstr);
+		send(cfd,ttrstr,TTRCHARS,0);
+
 		printf("File sent\n");
 		//close file 
 		close(fd);
@@ -939,38 +946,45 @@ void file_checker()
 	{
 		FILE *file;
 		int fd;
-		for(std::list<file_entry *>::iterator it = flist.begin(); it != flist.end(); it++)
+		if(push)
 		{
-			file = fopen((const char *)(*it)->filename.c_str(),"r");
-			if(file == NULL)
+			for(std::list<file_entry *>::iterator it = flist.begin(); it != flist.end(); it++)
 			{
-				printf("File %s moved or deleted: Updating list\n",(*it)->filename.c_str());
-				//Tell server to remove from list, if available
-				delete(*it);
-				flist.erase(it);
-				send_invalidation((*it)->filename.c_str());
-			}
-			else
-			{
-				fclose(file);
-				fd = open((const char *)(*it)->filename.c_str(),O_RDONLY);
-				if(fd < 0)
+				file = fopen((const char *)(*it)->filename.c_str(),"r");
+				if(file == NULL)
 				{
-					printf("File deleted, sending invalidation request\n");
+					printf("File %s moved or deleted: Updating list\n",(*it)->filename.c_str());
+					//Tell server to remove from list, if available
+					delete(*it);
+					flist.erase(it);
+					send_invalidation((*it)->filename.c_str());
 				}
 				else
 				{
-					struct stat filestat;
-					fstat(fd,&filestat);
-					//If the file has been modified
-					if(filestat.st_mtime > (*it)->mtime)
+					fclose(file);
+					fd = open((const char *)(*it)->filename.c_str(),O_RDONLY);
+					if(fd < 0)
 					{
-						//Send invalidation request
-						send_invalidation((*it)->filename.c_str());
-						(*it)->mtime = filestat.st_mtime;
+						printf("File deleted, sending invalidation request\n");
+					}
+					else
+					{
+						struct stat filestat;
+						fstat(fd,&filestat);
+						//If the file has been modified
+						if(filestat.st_mtime > (*it)->mtime)
+						{
+							//Send invalidation request
+							send_invalidation((*it)->filename.c_str());
+							(*it)->mtime = filestat.st_mtime;
+						}
 					}
 				}
 			}
+		}
+		else
+		{
+			update();
 		}
 		sleep(UPDATETIME);
 	}
@@ -1257,7 +1271,7 @@ void read_filename(char *filename, int flag)
 /* Set up a server to retrieve from other client
  * and receive the file filename from peerid
  */
-void retrieve(int sfd, char *filename)
+void retrieve_file(int sfd, const char *filename, in_port_t port)
 {
 	char filesize[MAXFILESIZECHARS];
 	//Send client the file name wanted
@@ -1290,8 +1304,21 @@ void retrieve(int sfd, char *filename)
 		}
 	}
 	chmod(filename,S_IRUSR | S_IRGRP | S_IROTH);
-	printf("File received\n");
+	struct timeval tv;
+	gettimeofday(&tv,NULL);
+	time_t rtime = tv.tv_sec;
 
+	char mtimestr[MTIMECHARS] = {"0"};
+	recv(sfd,mtimestr,MTIMECHARS,0);
+	time_t mtime = atoi(mtimestr);
+
+	char ttrstr[TTRCHARS] = {"0"};
+	recv(sfd,ttrstr,TTRCHARS,0);
+	int TTR = atoi(ttrstr);
+	
+	add_dl_file(filename,port,rtime,mtime,TTR);
+
+	printf("File received\n");
 	//Display file if less than 1KB
 	fclose(file);
 	file = fopen(filename,"r");
