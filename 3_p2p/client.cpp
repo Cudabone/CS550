@@ -26,7 +26,7 @@
 //When a file is downloaded, must also receive origin ID, and TTR value, and
 //modification time, sent by server who is not origin
 //
-//Directories: "<portno> user" "<portno> downloaded"
+//Directories: "<portno>_user" "<portno>_downloaded"
 //Downloaded files will be auto-registered
 //Only can register user files
 //
@@ -34,7 +34,11 @@
 //-Modify file checker to check outdated files - DONE CHECK
 //-Add mtime of source, mtime of receiving - DONE CHECK
 //-Send file update - DONE CHECK
-//-Regular requests with both lists
+//
+//TODO
+//-Regular requests with both lists, modify file_check
+//-Ensure enough threads
+//-Fix Directories
 
 typedef std::list<in_port_t> port_list;
 
@@ -62,7 +66,6 @@ typedef struct
 	int TTR;
 } file_entry_dl;
 
-void create_directories();
 bool read_setup(std::string filename,port_list &ports);
 bool valid_port_range(in_port_t port);
 void print_port_list(const port_list &ports);
@@ -98,7 +101,7 @@ void send_invalidation(const char *fname);
 void forward_invalidation(int cfd);
 
 //Files
-bool file_check(char *filename);
+bool file_check(const char *filename);
 void add_file(char *filename);
 void file_checker();
 void remove_file(char *filename);
@@ -106,7 +109,9 @@ void create_directories();
 bool check_mtime(char *filename,time_t mtime);
 void add_dl_file(const char *filename,in_port_t origin,time_t rtime,time_t mtime, int TTR);
 void delete_files();
-
+void create_directories();
+file_entry_dl *get_dl_file(const char *filename);
+file_entry *get_file(const char *filename);
 
 //Query listing
 std::list<query *> qlist;
@@ -128,6 +133,7 @@ std::string dldir;
 
 int done = 0;
 bool push = false;
+
 int main(int argc, char **argv)
 {
 	if(argc != 4)
@@ -783,6 +789,24 @@ void add_dl_file(const char *filename,in_port_t origin,time_t rtime,time_t mtime
 	fe->TTR = TTR;
 	ulist.push_back(fe);
 }
+file_entry_dl *get_dl_file(const char *filename)
+{
+	for(std::list<file_entry_dl *>::const_iterator it = ulist.begin(); it != ulist.end(); it++)
+	{
+		if(strcmp(filename,(*it)->filename.c_str()) == 0)
+			return (*it);
+	}
+	return NULL;
+}
+file_entry *get_file(const char *filename)
+{
+	for(std::list<file_entry *>::const_iterator it = flist.begin(); it != flist.end(); it++)
+	{
+		if(strcmp(filename,(*it)->filename.c_str()) == 0)
+			return (*it);
+	}
+	return NULL;
+}
 void delete_files()
 {
 	while(!flist.empty())
@@ -796,9 +820,15 @@ void delete_files()
 		flist.pop_front();
 	}
 }
-bool file_check(char *filename)
+//Checks both file list and downloaded file list, returns if the file exists
+bool file_check(const char *filename)
 {
 	for(std::list<file_entry *>::const_iterator it = flist.begin(); it != flist.end(); it++)
+	{
+		if(strcmp(filename,(*it)->filename.c_str()) == 0)
+			return true;
+	}
+	for(std::list<file_entry_dl *>::const_iterator it = ulist.begin(); it != ulist.end(); it++)
 	{
 		if(strcmp(filename,(*it)->filename.c_str()) == 0)
 			return true;
@@ -825,6 +855,7 @@ void update()
 //send update request to socket cfd
 void send_update_request(file_entry_dl *fe,time_t ctime)
 {
+	printf("Sending file update request\n");
 	struct sockaddr_in ca;
 	int cfd;
 	cfd = socket(AF_INET,SOCK_STREAM,0);
@@ -857,16 +888,19 @@ void send_update_request(file_entry_dl *fe,time_t ctime)
 	{
 		//TODO
 		//fileupdate
+		printf("File changed, updating file\n");
 		retrieve_file(cfd,fe->filename.c_str(),fe->origin);
 	}
 	else
 	{
+		printf("File not changed, updating TTR\n");
 		char ttrstr[TTRCHARS] = {"0"};
 		//TTR update
 		recv(cfd,ttrstr,TTRCHARS,0);
 		fe->TTR = atoi(ttrstr);
 		fe->rtime = ctime;
 	}
+	printf("File update complete\n");
 	close(cfd);
 }
 void send_file(int cfd)
@@ -917,6 +951,19 @@ void send_file(int cfd)
 		char ttrstr[TTRCHARS] = {"0"};
 		int_to_string(TTR,ttrstr);
 		send(cfd,ttrstr,TTRCHARS,0);
+
+		char originstr[MAXPORTCHARS] = {"0"};
+		if(get_file(filename) != NULL)
+		{
+			int_to_string(ls_port,originstr);
+			send(cfd,originstr,MAXPORTCHARS,0);
+		}
+		else 
+		{
+			file_entry_dl *fe = get_dl_file(filename);
+			int_to_string(fe->origin,originstr);
+			send(cfd,originstr,MAXPORTCHARS,0);	
+		}
 
 		printf("File sent\n");
 		//close file 
@@ -1315,15 +1362,16 @@ void retrieve_file(int sfd, const char *filename, in_port_t port)
 	char ttrstr[TTRCHARS] = {"0"};
 	recv(sfd,ttrstr,TTRCHARS,0);
 	int TTR = atoi(ttrstr);
+
+	char originstr[MAXPORTCHARS] = {"0"};
+	recv(sfd,originstr,MAXPORTCHARS,0);
+	in_port_t origin = (in_port_t)atoi(originstr);
 	
-	add_dl_file(filename,port,rtime,mtime,TTR);
+	add_dl_file(filename,origin,rtime,mtime,TTR);
 
 	printf("File received\n");
 	//Display file if less than 1KB
 	fclose(file);
-	file = fopen(filename,"r");
-	fclose(file);
-	//unlink(sa.sun_path);
 	close(sfd);
 }
 /* Prompt the user as to whether they want to receive, 
