@@ -34,43 +34,41 @@
 
 	./client portnumber config-file --pull
 
-EX: in c1 directory, ./client ../cl1
-
 The client should be in a separate directory from other clients
 
 ## Output file (output.txt)
 
-./setup.sh
+	./setup.sh
 
-(in c1 dir)
-./run_center.sh
+	(in c1 dir)
+	./run_center.sh
 
-(in c2 dir)
-./run_leaf2.sh
+	(in c2 dir)
+	./run_leaf2.sh
 
-(in c3 dir)
-./run_leaf3.sh
-
-(in c4 dir)
-./run_leaf4.sh
-
-(in c5 dir)
-./run_leaf5.sh
-
-(in c6 dir)
-./run_leaf6.sh
-
-(in c7 dir)
-./run_leaf7.sh
-
-(in c8 dir)
-./run_leaf8.sh
-
-(in c9 dir)
-./run_leaf9.sh
-
-(in c10 dir)
-./run_leaf10.sh
+	(in c3 dir)
+	./run_leaf3.sh
+	
+	(in c4 dir)
+	./run_leaf4.sh
+	
+	(in c5 dir)
+	./run_leaf5.sh
+	
+	(in c6 dir)
+	./run_leaf6.sh
+	
+	(in c7 dir)
+	./run_leaf7.sh
+	
+	(in c8 dir)
+	./run_leaf8.sh
+	
+	(in c9 dir)
+	./run_leaf9.sh
+	
+	(in c10 dir)
+	./run_leaf10.sh
 
 Exit all clients normally with command 3: Exit
 
