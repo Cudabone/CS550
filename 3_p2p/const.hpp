@@ -20,10 +20,8 @@
 #define MAXFILESIZECHARS 256
 
 //Client values
-//Number of clients
-#define NUMCLIENTS 10
 //Number of threads for client, minimum = 3
-//Need two threads for self, one for every other client
+//Need two threads for self, one or more for server.
 #define NTHREADS 4
 
 //Time-to-refresh value, files expire after this many minutes
