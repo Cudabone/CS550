@@ -103,7 +103,9 @@ void forward_invalidation(int cfd);
 //Files
 bool file_check(const char *filename);
 void add_file(char *filename);
-void file_checker();
+//void file_checker();
+void file_checker_push();
+void file_checker_pull();
 void remove_file(char *filename);
 void create_directories();
 bool check_mtime(char *filename,time_t mtime);
@@ -683,7 +685,9 @@ void *distribute_threads(void *i)
 			break;
 		case 1:
 			//File checking
-			file_checker();
+			if(push)
+				file_checker_push();
+			else file_checker_pull();
 			break;
 		default:
 			process_request();
@@ -977,6 +981,7 @@ void remove_file(char *filename)
 		}
 	}
 }
+/*
 void file_checker()
 {
 	while(!done)
@@ -1023,6 +1028,66 @@ void file_checker()
 		{
 			update();
 		}
+		sleep(UPDATETIME);
+	}
+}
+*/
+void file_checker_push()
+{
+	printf("File checker (push) started\n");
+	while(!done)
+	{
+		FILE *file;
+		int fd;
+		for(std::list<file_entry *>::iterator it = flist.begin(); it != flist.end(); it++)
+		{
+			fd = open((const char *)(*it)->filename.c_str(),O_RDONLY);
+			if(fd < 0)
+			{
+				printf("File %s moved or deleted: Updating list\n",(*it)->filename.c_str());
+				delete(*it);
+				flist.erase(it);
+				send_invalidation((*it)->filename.c_str());
+			}
+			else
+			{
+				struct stat filestat;
+				fstat(fd,&filestat);
+				//If the file has been modified
+				if(filestat.st_mtime > (*it)->mtime)
+				{
+					//Send invalidation request
+					send_invalidation((*it)->filename.c_str());
+					(*it)->mtime = filestat.st_mtime;
+				}
+				close(fd);
+			}
+		}
+		sleep(UPDATETIME);
+	}
+}
+void file_checker_pull()
+{
+	printf("File checker (pull) started\n");
+	while(!done)
+	{
+		int fd;
+		for(std::list<file_entry *>::iterator it = flist.begin(); it != flist.end(); it++)
+		{
+			fd = open((const char *)(*it)->filename.c_str(),O_RDONLY);
+			if(fd < 0)
+			{
+				printf("File %s moved or deleted: Updating list\n",(*it)->filename.c_str());
+				//Tell server to remove from list, if available
+				delete(*it);
+				flist.erase(it);
+			}
+			else
+			{
+				close(fd);
+			}
+		}
+		update();
 		sleep(UPDATETIME);
 	}
 }
