@@ -31,7 +31,8 @@ cp ./client ./c10/
 
 echo Moving run scripts into directories
 cd scripts
-cp ./run_center.sh ../c1/
+cp ./run_center5.sh ../c1/
+cp ./run_center10.sh ../c1/
 cp ./run_leaf2.sh ../c2/
 cp ./run_leaf3.sh ../c3/
 cp ./run_leaf4.sh ../c4/
