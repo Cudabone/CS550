@@ -77,7 +77,7 @@ bool read_filename(char *filename, int flag);
 int prompt_receive(int numpeers,char *peerid,std::list<std::string> recvports);
 void print_plist(const std::list<std::string> &plist);
 bool exit_cmd(int cmd);
-int usr_dl_prompt();
+//int usr_dl_prompt();
 
 //Servers
 void client_user();
@@ -107,7 +107,7 @@ void add_file(char *filename);
 void file_checker_push();
 void file_checker_pull();
 void remove_file(char *filename);
-void create_directories();
+//void create_directories();
 bool check_mtime(char *filename,time_t mtime);
 void add_dl_file(const char *filename,in_port_t origin,time_t rtime,time_t mtime, int TTR);
 void delete_files();
@@ -577,6 +577,8 @@ void client_user()
 	//Close client server as well
 	close(lsfd);
 }
+//Reads the setup file given in the argv, this contains the port list of
+//neighboring clients
 bool read_setup(std::string filename,port_list &ports)
 {
 	std::ifstream setup_file(filename.c_str());	
@@ -598,12 +600,24 @@ bool read_setup(std::string filename,port_list &ports)
 	}
 	return true;
 }
+//Checks if a given port is within the valid port range
 bool valid_port_range(in_port_t port)
 {
 	if(port < 1 || port > 65535)
 		return false;
 	return true;
 }
+//Prints the port list for neighboring clients. Used for debugging.
+void print_plist(const std::list<std::string> &plist)
+{
+	std::cout << "Recv Ports: " << "[ ";
+	for(std::list<std::string>::const_iterator it = plist.begin(); it != plist.end(); it++)
+	{
+		std::cout << *it << " ";
+	}
+	std::cout << "]" << std::endl;
+}
+//Prints the port list for neighboring clients. Used for debugging.
 void print_port_list(const port_list &ports)
 {
 	std::cout << "Port list: [ ";
@@ -613,6 +627,7 @@ void print_port_list(const port_list &ports)
 	}
 	std::cout << "]" << std::endl;
 }
+//Creates the client's server with specified port in argv
 bool create_server()
 {
 	lsfd = socket(AF_INET,SOCK_STREAM,0);
@@ -707,6 +722,7 @@ void port_to_string(in_port_t port, char *string)
 {
 	sprintf(string,"%u",port);
 }
+//Adds a query to the query listing
 void add_query(uuid_t uuid, in_port_t up_port)
 {
 	query *q = new query;
@@ -714,6 +730,7 @@ void add_query(uuid_t uuid, in_port_t up_port)
 	q->port = up_port;
 	qlist.push_back(q);
 }
+//Removes a query from the query listing
 void remove_query(uuid_t uuid)
 {
 	for(std::list<query *>::iterator it = qlist.begin(); it != qlist.end(); it++)
@@ -727,11 +744,13 @@ void remove_query(uuid_t uuid)
 		}
 	}
 }
+//Frees the query listing
 void free_qlist()
 {
 	for(std::list<query *>::iterator it = qlist.begin(); it != qlist.end(); it++)
 		delete *it;
 }
+//Checks if a query is in the query list. True if so, false otherwise.
 bool have_query(uuid_t uuid)
 {
 	for(std::list<query *>::iterator it = qlist.begin(); it != qlist.end(); it++)
@@ -758,6 +777,7 @@ void add_file(char *filename)
 	fe->mtime = filestat.st_mtime;
 	flist.push_back(fe);
 }
+//Creates and adds a downloaded file entry to the file list
 void add_dl_file(const char *filename,in_port_t origin,time_t rtime,time_t mtime, int TTR)
 {
 	if(chdir(dldir.c_str()) < 0)
@@ -774,6 +794,7 @@ void add_dl_file(const char *filename,in_port_t origin,time_t rtime,time_t mtime
 	fe->TTR = TTR;
 	ulist.push_back(fe);
 }
+//Finds a returns a downloaded file entry, else returns null
 file_entry_dl *get_dl_file(const char *filename)
 {
 	for(std::list<file_entry_dl *>::const_iterator it = ulist.begin(); it != ulist.end(); it++)
@@ -783,6 +804,7 @@ file_entry_dl *get_dl_file(const char *filename)
 	}
 	return NULL;
 }
+//Finds and returns a file entry, else returns null
 file_entry *get_file(const char *filename)
 {
 	for(std::list<file_entry *>::const_iterator it = flist.begin(); it != flist.end(); it++)
@@ -792,6 +814,7 @@ file_entry *get_file(const char *filename)
 	}
 	return NULL;
 }
+//Removes the files from file and downloaded file list.
 void delete_files()
 {
 	while(!flist.empty())
@@ -971,13 +994,22 @@ void send_file(int cfd)
  */
 void remove_file(char *filename)
 {
-	for(std::list<file_entry *>::const_iterator it = flist.begin(); it != flist.end(); it++)
+	for(std::list<file_entry *>::iterator it = flist.begin(); it != flist.end(); it++)
 	{
 		if(strcmp(filename,(*it)->filename.c_str()) == 0)
 		{
 			printf("Removing invalidated file: %s\n",(*it)->filename.c_str());
 			delete *it;
 			flist.erase(it);
+		}
+	}
+	for(std::list<file_entry_dl *>::iterator it = ulist.begin(); it != ulist.end(); it++)
+	{
+		if(strcmp(filename,(*it)->filename.c_str()) == 0)
+		{
+			printf("Removing invalidated file: %s\n",(*it)->filename.c_str());
+			delete *it;
+			ulist.erase(it);
 		}
 	}
 }
@@ -1032,6 +1064,8 @@ void file_checker()
 	}
 }
 */
+//Checks file listing for push based servers. If a file is deleted or
+//modified, an invalidation request is sent across the network.
 void file_checker_push()
 {
 	printf("File checker (push) started\n");
@@ -1066,6 +1100,9 @@ void file_checker_push()
 		sleep(UPDATETIME);
 	}
 }
+//Checks file listings for pull based servers. If a file is deleted, it is
+//removed from the file listing. If a file expires, a request to update the
+//file is sent. This is seen in update() and send_update_request().
 void file_checker_pull()
 {
 	printf("File checker (pull) started\n");
@@ -1108,6 +1145,8 @@ bool check_mtime(char *filename,time_t mtime)
 	//Default that file is most up to date, even if deleted by origin
 	return false;
 }
+//Sends an invalidation request for a file to all neighboring peers. If a peer
+//has a file, they invalidate it by removing it from their list.
 void send_invalidation(const char *fname)
 {
 	struct sockaddr_in sa;
@@ -1161,6 +1200,8 @@ void send_invalidation(const char *fname)
 		close(sfd);
 	}
 }
+//Upon receiving an invalidation request, this forwards the invalidation to
+//all neighboring peers. If the client has the file, then it is removed from the file listing.
 void forward_invalidation(int cfd)
 {
 	struct sockaddr_in sa;
@@ -1304,6 +1345,7 @@ int prompt()
 	}while(!valid);
 	return input;
 }
+//Helper function to check if a command should exit user program
 bool exit_cmd(int cmd)
 {
 	if((push && cmd == 3) || (!push && cmd == 4))
@@ -1312,6 +1354,7 @@ bool exit_cmd(int cmd)
 	}
 	return false;
 }
+/*
 int usr_dl_prompt()
 {
 	int input;
@@ -1334,6 +1377,7 @@ int usr_dl_prompt()
 	}while(!valid);
 	return input;
 }
+*/
 //flag = 0 : Register, flag = 1 : Lookup
 /* Reads a filename from the user, can be called
  * with two flags as to whether the read
@@ -1492,15 +1536,7 @@ int prompt_receive(int numpeers,char *peerid,std::list<std::string> recvports)
 	}
 	return input;
 }
-void print_plist(const std::list<std::string> &plist)
-{
-	std::cout << "Recv Ports: " << "[ ";
-	for(std::list<std::string>::const_iterator it = plist.begin(); it != plist.end(); it++)
-	{
-		std::cout << *it << " ";
-	}
-	std::cout << "]" << std::endl;
-}
+/*
 void create_directories()
 {
 	usrdir = "User";
@@ -1517,3 +1553,4 @@ void create_directories()
 	else 
 		chdir(cwdir.c_str());
 }
+*/
