@@ -1,5 +1,14 @@
 #!/bin/bash
 make
+echo Creating Client Directories
+rm -r ./c1 ./c2 ./c3 ./c4 ./c5
+mkdir c1 c2 c3 c4 c5
+mkdir ./c1/User ./c1/Downloaded
+mkdir ./c2/User ./c2/Downloaded
+mkdir ./c3/User ./c3/Downloaded
+mkdir ./c4/User ./c4/Downloaded
+mkdir ./c5/User ./c5/Downloaded
+
 echo Moving Client into directories
 cp ./client ./c1/
 cp ./config/line1.txt ./c1/
@@ -21,14 +30,9 @@ cd ..
 
 echo Copying test files
 cd testfiles
-rm ../c1/*.txt
-rm ../c2/*.txt
-rm ../c3/*.txt
-rm ../c4/*.txt
-rm ../c5/*.txt
-cp test1.txt ../c1/
-cp test2.txt ../c2/
-cp test3.txt ../c3/
-cp test3.txt ../c4/
-cp test3.txt ../c5/
+cp test1.txt ../c1/User/
+cp test2.txt ../c2/User/
+cp test3.txt ../c3/User/
+cp test3.txt ../c4/User/
+cp test3.txt ../c5/User/
 cd ..

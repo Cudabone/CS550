@@ -26,7 +26,7 @@
 //When a file is downloaded, must also receive origin ID, and TTR value, and
 //modification time, sent by server who is not origin
 //
-//Directories: "<portno>_user" "<portno>_downloaded"
+//Directories: "User" "Downloaded"
 //Downloaded files will be auto-registered
 //Only can register user files
 //
@@ -36,9 +36,9 @@
 //-Send file update - DONE CHECK
 //
 //TODO
-//-Regular requests with both lists, modify file_check
-//-Ensure enough threads
-//-Fix Directories
+//-Regular requests with both lists, modify file_check - DONE
+//-Ensure enough threads - DONE
+//-Registering files from either directory, adding to correct list - DONE
 
 typedef std::list<in_port_t> port_list;
 
@@ -71,10 +71,9 @@ bool valid_port_range(in_port_t port);
 void print_port_list(const port_list &ports);
 void create_threads();
 void int_to_string(int val,char *string);
-void send_file(int cfd);
 int prompt();
 void port_to_string(in_port_t port, char *string);
-void read_filename(char *filename, int flag);
+bool read_filename(char *filename, int flag);
 int prompt_receive(int numpeers,char *peerid,std::list<std::string> recvports);
 void print_plist(const std::list<std::string> &plist);
 bool exit_cmd(int cmd);
@@ -85,6 +84,7 @@ void client_user();
 bool create_server();
 void *process_request();
 void retrieve_file(int sfd, const char *filename, in_port_t port);
+void send_file(int cfd);
 void update();
 void send_update_request(file_entry_dl *fe,time_t ctime);
 
@@ -128,8 +128,9 @@ port_list plist;
 
 //Hostname and directories for each client
 std::string hostname; //Port number as identifier
-std::string usrdir;
-std::string dldir;
+std::string usrdir = "User";
+std::string dldir = "Downloaded";
+std::string cwdir; //Default working directory
 
 int done = 0;
 bool push = false;
@@ -167,7 +168,11 @@ int main(int argc, char **argv)
 		printf("Choose an update option\n");
 		return 4;
 	}
-	create_directories();
+	char cwdstr[MAXLINE];
+	if(getcwd(cwdstr,sizeof(cwdstr)) != NULL)
+		cwdir = std::string(cwdstr);
+	printf("Current working directory: %s\n", cwdir.c_str());
+	//create_directories();
 	print_port_list(plist);
 	if(!create_server())
 		return 4;
@@ -466,41 +471,17 @@ void client_user()
 			//Register a file
 			case 1: 
 				{
-					//Read filename from user
-					/*
-					int input = usr_dl_prompt();
-					if(input == 0)
-					{
-						if(chdir(usrdir.c_str()) < 0)
-						{
-							printf("Missing user directory, cancelling\n");
-							break;
-						}
-					}
-					else
-					{
-						if(chdir(dldir.c_str()) < 0)
-						{
-							printf("Missing download directory, cancelling\n");
-							break;
-						}
-					}
-					*/
-					if(chdir(usrdir.c_str()) < 0)
-					{
-						printf("Missing user directory, cancelling\n");
+					if(!read_filename(filename,0))
 						break;
-					}
-					read_filename(filename,0);
 					add_file(filename);
-					chdir("..");
 					break;
 				}
 			//Do a lookup and then can retrieve
 			case 2: 
 				{
 					//Read filename from user
-					read_filename(filename,1);
+					if(!read_filename(filename,1))
+						break;
 
 					//Generate UUID for Request
 					uuid_t uuid;
@@ -780,7 +761,7 @@ void add_dl_file(const char *filename,in_port_t origin,time_t rtime,time_t mtime
 		printf("Download directory missing, not adding it to the list\n");
 		return;
 	}
-	chdir("..");
+	chdir(cwdir.c_str());
 	file_entry_dl *fe = new file_entry_dl;
 	fe->filename = std::string(filename);
 	fe->rtime = rtime;
@@ -913,18 +894,26 @@ void send_file(int cfd)
 			return;
 		}
 		printf("Sending file: %s\n",filename);
+		bool dl_file = false;
 
-		//Send file
-		//printf("File would be sent here\n");
-		//Open the file
-		//if(chdir(usrdir.c_str()) < 0)
-			//printf("Missing user directory, using default directory\n");
+		int err;
+		if(get_file(filename) != NULL)
+		{
+			err = chdir(usrdir.c_str());
+			dl_file = false;
+		}
+		else if(get_dl_file(filename) != NULL)
+		{
+			err = chdir(dldir.c_str());
+			dl_file = true;
+		}
 
 		int fd = open(filename,O_RDONLY); 
 		if(fd < 0)
 		{
 			printf("File couldnt be opened\n");
 			close(cfd);
+			chdir(cwdir.c_str());
 			return;
 		}
 		struct stat filestat;
@@ -940,6 +929,7 @@ void send_file(int cfd)
 		{
 			printf("Error sending file\n");
 			close(cfd);
+			chdir(cwdir.c_str());
 			return;
 		}
 		char mtimestr[MTIMECHARS] = {"0"};
@@ -953,7 +943,7 @@ void send_file(int cfd)
 		send(cfd,ttrstr,TTRCHARS,0);
 
 		char originstr[MAXPORTCHARS] = {"0"};
-		if(get_file(filename) != NULL)
+		if(!dl_file)
 		{
 			int_to_string(ls_port,originstr);
 			send(cfd,originstr,MAXPORTCHARS,0);
@@ -1285,35 +1275,36 @@ int usr_dl_prompt()
  * will correspond to registering a file or
  * a lookup/receive.
  */
-void read_filename(char *filename, int flag)
+bool read_filename(char *filename, int flag)
 {
 	FILE *file;
-	do{
-		if(flag == 0)
-			printf("Enter the filename to register\n");
-		else 
-			printf("Enter the filename to retrieve\n");	
-		//Read input
-		fgets(filename,MAXLINE,stdin);
-		char *buf;
-		if((buf=strchr(filename,'\n')) != NULL)
-			*buf = '\0';
-		//If registering
-		if(flag == 0)
+	if(flag == 0)
+		printf("Enter the filename to register\n");
+	else 
+		printf("Enter the filename to retrieve\n");	
+	//Read input
+	fgets(filename,MAXLINE,stdin);
+	char *buf;
+	if((buf=strchr(filename,'\n')) != NULL)
+		*buf = '\0';
+	//If registering
+	if(flag == 0)
+	{
+		//Check to make sure we can open the file
+		file = fopen((const char *)filename,"r");
+		if(file == NULL)
 		{
-			//Check to make sure we can open the file
-			file = fopen((const char *)filename,"r");
-			if(file == NULL)
-			{
-				printf("File does not exist, try again\n");
-			}
-			else
-			{
-				fclose(file);
-			}
-			//Close the file
+			printf("File does not exist, cancelling\n");
+			return false;
 		}
-	}while(file == NULL && flag == 0);
+		else
+		{
+			fclose(file);
+			return true;
+		}
+		//Close the file
+	}
+	return true;
 }
 /* Set up a server to retrieve from other client
  * and receive the file filename from peerid
@@ -1372,6 +1363,7 @@ void retrieve_file(int sfd, const char *filename, in_port_t port)
 	printf("File received\n");
 	//Display file if less than 1KB
 	fclose(file);
+	chdir(cwdir.c_str());
 	close(sfd);
 }
 /* Prompt the user as to whether they want to receive, 
@@ -1446,17 +1438,17 @@ void print_plist(const std::list<std::string> &plist)
 }
 void create_directories()
 {
-	usrdir = hostname+"_User";
-	dldir = hostname+"_Downloaded";
+	usrdir = "User";
+	dldir = "Downloaded";
 	int err;
 	err = chdir(usrdir.c_str());
 	if(err < 0)
 		mkdir(usrdir.c_str(),0777);
 	else
-		chdir("..");
+		chdir(cwdir.c_str());
 	err = chdir(dldir.c_str());
 	if(err < 0)
 		mkdir(dldir.c_str(),0777);
 	else 
-		chdir("..");
+		chdir(cwdir.c_str());
 }
