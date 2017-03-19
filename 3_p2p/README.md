@@ -19,13 +19,14 @@
 - mktestfiles.sh - creates some test files for transferring
 
 ## Build(On OSX):
-Run: ./setup.sh 
+
+	./setup.sh 
 
 ## Running Instructions
 
 	./setup.sh
 	
-	Change directory into client directory
+	(Change directory into client directory)
 
 	./client portnumber config-file --push
 
