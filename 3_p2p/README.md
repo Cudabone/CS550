@@ -22,15 +22,16 @@
 Run: ./setup.sh 
 
 ## Running Instructions
-Run: ./setup.sh
+
+	./setup.sh
 	
 	Change directory into client directory
 
-./client <portno> <config-file> --push
+	./client portnumber config-file --push
 
-or
+	or
 
-./client <portno> <config-file> --pull
+	./client portnumber config-file --pull
 
 EX: in c1 directory, ./client ../cl1
 
