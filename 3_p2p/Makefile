@@ -9,6 +9,9 @@ all: client
 client: client.cpp const.hpp
 	$(CC) $(CFLAGS) client.cpp -o client
 
+test: push_test.cpp const.hpp
+	$(CC) $(CFLAGS) push_test.cpp -o push_test
+
 clean: 
-	@rm -f ./server ./client
-	@rm -fr ./server.dSYM ./client.dSYM
+	@rm -f ./client ./push_test
+	@rm -fr ./client.dSYM ./push_test.dSYM

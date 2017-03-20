@@ -12,6 +12,7 @@
 #include <fcntl.h>
 #include <sys/time.h>
 #include <cmath>
+#include <utime.h>
 
 //Network Includes
 #include <sys/socket.h>
@@ -114,6 +115,10 @@ void delete_files();
 void create_directories();
 file_entry_dl *get_dl_file(const char *filename);
 file_entry *get_file(const char *filename);
+
+//testing
+void modify_file(const char *filename);
+void send_query(const char *filename);
 
 //Query listing
 std::list<query *> qlist;
@@ -988,6 +993,27 @@ void send_file(int cfd)
 		//close client connection
 		close(cfd);
 }
+//Modifies a file for testing purposes
+void modify_files(const char *filename)
+{
+	int fd;
+	for(std::list<file_entry *>::iterator it = flist.begin(); it != flist.end(); it++)
+	{
+		struct stat filestat;
+		time_t mtime;
+		struct utimbuf update_time;
+		fd = open((*it)->filename.c_str(),O_APPEND);
+		if(!(fd < 0))
+		{
+			fstat(fd,&filestat);	
+			mtime = filestat.st_mtime;
+			update_time.actime = filestat.st_atime;
+			update_time.modtime = filestat.st_mtime+1;
+			close(fd);
+			utime(filename,&update_time);
+		}
+	}
+}
 /* Checks if any registered files from client were moved
  * or can no longer be opened. If so remove from central
  * indexing server
@@ -1071,7 +1097,6 @@ void file_checker_push()
 	printf("File checker (push) started\n");
 	while(!done)
 	{
-		FILE *file;
 		int fd;
 		for(std::list<file_entry *>::iterator it = flist.begin(); it != flist.end(); it++)
 		{
@@ -1554,3 +1579,129 @@ void create_directories()
 		chdir(cwdir.c_str());
 }
 */
+void send_query(const char *filename)
+{
+	//Read filename from user
+	int sfd;
+	struct sockaddr_in sa;
+	int err;
+	char portstr[MAXPORTCHARS+1];
+	port_to_string(ls_port,portstr);
+	char numpeers[PEERRECVNUMCHARS];
+	int numpeersint = 0;
+	std::list<std::string> recvports;
+	char peerid[MAXPORTCHARS+1];
+
+	int ttlval = TTL;
+	char ttlstr[TTLCHARS];
+	int_to_string(ttlval,ttlstr);
+
+	sa.sin_family = AF_INET;
+	//Bind to 127.0.0.1 (Local)
+	sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	//Generate UUID for Request
+	uuid_t uuid;
+	uuid_generate(uuid);
+	uuid_string_t ustr;
+	uuid_unparse(uuid,ustr);
+	//printf("Generated UUID: %s\n",uuid);
+	add_query(uuid,ls_port);	
+
+	for(port_list::const_iterator it = plist.begin(); it != plist.end(); it++)
+	{
+		//create new socket
+		sfd = socket(AF_INET,SOCK_STREAM,0);
+		if(sfd < 0)
+			perror("Socket");
+		in_port_t nextport = *it;
+
+		//Start request to each server
+		sa.sin_port = htons(nextport);
+		err = connect(sfd,(const struct sockaddr *)&sa,sizeof(sa));
+		if(err < 0)
+			perror("Connect (User)");
+		//Send Lookup Command and filename
+		send(sfd,"1",2,0);
+		send(sfd,(void *)ustr,sizeof(uuid_string_t),0);
+		send(sfd,portstr,MAXPORTCHARS+1,0);
+		send(sfd,ttlstr,TTLCHARS,0);
+		send(sfd,filename,MAXLINE,0);
+
+		printf("Waiting for peers to respond...\n"); 
+
+		//Receive number of peers with file 
+		recv(sfd,(void *)numpeers,PEERRECVNUMCHARS,0); 
+		numpeersint += atoi(numpeers); 
+		//printf("Found %d more peers with file\n",numpeersint);
+		//If there are peers to recv from
+		if(numpeersint != 0)
+		{
+			int temp;
+			for(temp = 0; temp < numpeersint; temp++)
+			{
+				char portno[MAXPORTCHARS+1] = {"0"};
+				//Receive port of each available client with file
+				recv(sfd,(void *)portno,MAXPORTCHARS+1,0);
+				std::string portstr(portno);
+				recvports.push_back(portstr);
+			}
+		}
+		close(sfd);
+	}
+
+	//print_plist(recvports);
+	sfd = socket(AF_INET,SOCK_STREAM,0);
+	printf("Found %d total peers with file\n",numpeersint);
+	int input = 0;
+	if(numpeersint != 0)
+	{
+		strcpy(peerid,recvports.front().c_str());
+		//Call recv file here
+		//TODO may not need new connection if in list
+		in_port_t port = (in_port_t)atoi(peerid);
+		sa.sin_port = htons(port);
+		err = connect(sfd,(const struct sockaddr *)&sa,sizeof(sa));
+		if(err < 0)
+			perror("Connect (File Receive)");
+		send(sfd,"2",2,0);
+		retrieve_file(sfd,filename,port);
+		//printf("Would have received file here\n");
+		printf("File transfer done!\n");
+	}
+
+	remove_query(uuid);
+	//print_queries();
+	close(sfd);
+}
+void push_test(bool random)
+{
+	int invalidations = 0;
+	std::list<std::string> files;
+	files.push_back(std::string("1kb.txt"));
+	files.push_back(std::string("2kb.txt"));	
+	files.push_back(std::string("3kb.txt"));	
+	files.push_back(std::string("4kb.txt"));	
+	files.push_back(std::string("5kb.txt"));	
+	files.push_back(std::string("6kb.txt"));	
+	files.push_back(std::string("7kb.txt"));	
+	files.push_back(std::string("8kb.txt"));	
+	files.push_back(std::string("9kb.txt"));	
+	files.push_back(std::string("10kb.txt"));	
+	for(std::list<std::string>::const_iterator it = files.begin(); it != files.end(); it++)
+	{
+		if(!file_check((*it).c_str()))
+		{
+			invalidations++;
+			if(random == true)
+			{
+				if(rand() % 10 < 5)
+					send_query((*it).c_str());
+			}
+			else
+			{
+				send_query((*it).c_str());
+			}
+		}
+	}
+	printf("Number of invalidations: %d\n",invalidations);
+}
