@@ -941,8 +941,9 @@ void send_file(int cfd)
 		std::string file;
 		if(dl_file)
 			file = dldir+filename;
-		else file = usrdir+filename;
-
+		else 
+			file = usrdir+filename;
+		printf("Attempting to send file: %s\n",file.c_str());
 		int fd = open(file.c_str(),O_RDONLY); 
 		if(fd < 0)
 		{
@@ -1461,7 +1462,7 @@ void retrieve_file(int sfd, const char *filename, in_port_t port)
 	int rem = atoi(filesize);
 	char buf[BUFFSIZE];
 	std::string filestr = dldir+filename;
-	int fd = open(filestr.c_str(),O_RDWR | O_CREAT);
+	int fd = open(filestr.c_str(),O_RDWR | O_CREAT, 0666);
 	FILE *file = fdopen(fd,"w+");
 	int recvb = 0;
 	int totalb = atoi(filesize);
