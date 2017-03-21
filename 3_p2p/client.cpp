@@ -555,7 +555,6 @@ void client_user()
 					//Call recv file here
 					if(input == 1)
 					{
-						//TODO may not need new 
 						in_port_t port = (in_port_t)atoi(peerid);
 						sa.sin_port = htons(port);
 						err = connect(sfd,(const struct sockaddr *)&sa,sizeof(sa));
