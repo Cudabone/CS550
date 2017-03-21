@@ -979,14 +979,14 @@ void send_file(int cfd)
 		char originstr[MAXPORTCHARS+1] = {"0"};
 		if(!dl_file)
 		{
-			int_to_string(ls_port,originstr);
+			port_to_string(ls_port,originstr);
 			printf("Sending port %d, string %s\n",ls_port,originstr);
 			send(cfd,originstr,MAXPORTCHARS+1,0);
 		}
 		else 
 		{
 			file_entry_dl *fe = get_dl_file(filename);
-			int_to_string(fe->origin,originstr);
+			port_to_string(fe->origin,originstr);
 			printf("Sending port %d, string %s\n",fe->origin,originstr);
 			send(cfd,originstr,MAXPORTCHARS+1,0);	
 		}
