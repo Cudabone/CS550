@@ -1,5 +1,8 @@
+#Client Executable and Debug information
 client
 client.dSYM/
+
+#Client Directories
 c1/
 c2/
 c3/
@@ -10,7 +13,11 @@ c7/
 c8/
 c9/
 c10/
+
+#Old Client Files
 client.c
 const.h
-test.sh
+
+# Creatable test files via create_files.sh
 *kb.txt
+
