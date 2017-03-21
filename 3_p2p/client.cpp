@@ -976,17 +976,19 @@ void send_file(int cfd)
 		int_to_string(TTR,ttrstr);
 		send(cfd,ttrstr,TTRCHARS,0);
 
-		char originstr[MAXPORTCHARS] = {"0"};
+		char originstr[MAXPORTCHARS+1] = {"0"};
 		if(!dl_file)
 		{
 			int_to_string(ls_port,originstr);
-			send(cfd,originstr,MAXPORTCHARS,0);
+			printf("Sending port %d, string %s\n",ls_port,originstr);
+			send(cfd,originstr,MAXPORTCHARS+1,0);
 		}
 		else 
 		{
 			file_entry_dl *fe = get_dl_file(filename);
 			int_to_string(fe->origin,originstr);
-			send(cfd,originstr,MAXPORTCHARS,0);	
+			printf("Sending port %d, string %s\n",fe->origin,originstr);
+			send(cfd,originstr,MAXPORTCHARS+1,0);	
 		}
 
 		printf("File sent\n");
@@ -1499,11 +1501,11 @@ void retrieve_file(int sfd, const char *filename, in_port_t port)
 	recv(sfd,ttrstr,TTRCHARS,0);
 	int TTR = atoi(ttrstr);
 
-	char originstr[MAXPORTCHARS] = {"0"};
-	recv(sfd,originstr,MAXPORTCHARS,0);
+	char originstr[MAXPORTCHARS+1] = {"0"};
+	recv(sfd,originstr,MAXPORTCHARS+1,0);
 	in_port_t origin = (in_port_t)atoi(originstr);
 	
-	printf("Adding dl file\n");
+	printf("Adding dl file, filename %s, port %d\n",filename,origin);
 	add_dl_file(filename,origin,rtime,mtime,TTR);
 
 	printf("File received\n");
