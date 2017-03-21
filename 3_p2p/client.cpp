@@ -375,8 +375,8 @@ void *process_request()
 					int_to_string(numpeersint,numpeersout);
 					send(cfd,numpeersout,PEERRECVNUMCHARS,0);
 					//Return recv port list
-					print_plist(recvports);
-					printf("Numpeersint: %u, Recvports size: %lu\n",numpeersint,recvports.size());
+					//print_plist(recvports);
+					//printf("Numpeersint: %u, Recvports size: %lu\n",numpeersint,recvports.size());
 					assert((int)numpeersint == (int)recvports.size());
 					while(!recvports.empty())
 					{

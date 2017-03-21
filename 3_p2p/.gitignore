@@ -13,3 +13,4 @@ c10/
 client.c
 const.h
 test.sh
+*kb.txt
