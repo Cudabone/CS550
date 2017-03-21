@@ -117,9 +117,9 @@ file_entry_dl *get_dl_file(const char *filename);
 file_entry *get_file(const char *filename);
 
 //testing
-void modify_files(const char *filename);
+void modify_files();
 void send_query(const char *filename);
-void push_test(bool random);
+void push_test();
 
 //Query listing
 std::list<query *> qlist;
@@ -929,7 +929,6 @@ void send_file(int cfd)
 		printf("Sending file: %s\n",filename);
 		bool dl_file = false;
 
-		int err;
 		if(get_file(filename) != NULL)
 			dl_file = false;
 		else if(get_dl_file(filename) != NULL)
@@ -992,7 +991,7 @@ void send_file(int cfd)
 		close(cfd);
 }
 //Modifies a file for testing purposes
-void modify_files(const char *filename)
+void modify_files()
 {
 	int fd;
 	for(std::list<file_entry *>::iterator it = flist.begin(); it != flist.end(); it++)
@@ -1009,7 +1008,7 @@ void modify_files(const char *filename)
 			update_time.actime = filestat.st_atime;
 			update_time.modtime = filestat.st_mtime+1;
 			close(fd);
-			utime(filename,&update_time);
+			utime(file.c_str(),&update_time);
 		}
 	}
 	sleep(UPDATETIME);
@@ -1428,7 +1427,7 @@ bool read_filename(char *filename, int flag)
 	{
 		std::string file = usrdir+filename;
 		//Check to make sure we can open the file
-		printf("Attempting to open: %s\n",file.c_str());
+		//printf("Attempting to open: %s\n",file.c_str());
 		fd = open(file.c_str(),O_RDONLY);
 		if(fd < 0)
 		{
@@ -1458,8 +1457,8 @@ void retrieve_file(int sfd, const char *filename, in_port_t port)
 	int rem = atoi(filesize);
 	char buf[BUFFSIZE];
 	std::string filestr = dldir+filename;
-	int fd = open(filestr.c_str(),O_WRONLY);
-	FILE *file = fdopen(fd,"w");
+	int fd = open(filestr.c_str(),O_RDWR | O_CREAT);
+	FILE *file = fdopen(fd,"w+");
 	int recvb = 0;
 	int totalb = atoi(filesize);
 	//Write to a new file
@@ -1479,7 +1478,10 @@ void retrieve_file(int sfd, const char *filename, in_port_t port)
 			fwrite(buf,sizeof(char),recvb,stdout);
 		}
 	}
-	chmod(filename,S_IRUSR | S_IRGRP | S_IROTH);
+	/*
+	if(chmod(filestr.c_str(),S_IRUSR | S_IRGRP | S_IROTH) < 0)
+		printf("chmod failed\n");
+		*/
 	struct timeval tv;
 	gettimeofday(&tv,NULL);
 	time_t rtime = tv.tv_sec;
@@ -1496,6 +1498,7 @@ void retrieve_file(int sfd, const char *filename, in_port_t port)
 	recv(sfd,originstr,MAXPORTCHARS,0);
 	in_port_t origin = (in_port_t)atoi(originstr);
 	
+	printf("Adding dl file\n");
 	add_dl_file(filename,origin,rtime,mtime,TTR);
 
 	printf("File received\n");
@@ -1676,7 +1679,7 @@ void send_query(const char *filename)
 	//print_queries();
 	close(sfd);
 }
-void push_test(bool random)
+void push_test()
 {
 	int invalidations = 0;
 	int total = 0;
@@ -1691,6 +1694,11 @@ void push_test(bool random)
 	files.push_back(std::string("8kb.txt"));	
 	files.push_back(std::string("9kb.txt"));	
 	files.push_back(std::string("10kb.txt"));	
+	//Get all files initially
+	for(std::list<std::string>::const_iterator it = files.begin(); it != files.end(); it++)
+	{
+		send_query((*it).c_str());
+	}
 	for(int i = 0; i < 100; i++)
 	{
 		for(std::list<std::string>::const_iterator it = files.begin(); it != files.end(); it++)
@@ -1700,15 +1708,8 @@ void push_test(bool random)
 			if(!file_check((*it).c_str()))
 			{
 				invalidations++;
-				if(random == true)
-				{
-					if(rand() % 10 < 5)
-						send_query((*it).c_str());
-				}
-				else
-				{
+				if(rand() % 10 < 5)
 					send_query((*it).c_str());
-				}
 			}
 		}
 	}
