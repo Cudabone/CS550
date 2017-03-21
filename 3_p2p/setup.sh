@@ -13,21 +13,32 @@ mkdir ./c7/User ./c7/Downloaded
 mkdir ./c8/User ./c8/Downloaded
 mkdir ./c9/User ./c9/Downloaded
 mkdir ./c10/User ./c10/Downloaded
+cp *kb.txt ./c1/User
+cp *kb.txt ./c1/User 
+cp *kb.txt ./c2/User 
+cp *kb.txt ./c3/User 
+cp *kb.txt ./c4/User 
+cp *kb.txt ./c5/User 
+cp *kb.txt ./c6/User 
+cp *kb.txt ./c7/User 
+cp *kb.txt ./c8/User 
+cp *kb.txt ./c9/User 
+cp *kb.txt ./c10/User 
 
 echo Moving Client into directories
-cp ./client ./c1/
+cp ./client ./push_test_query ./c1/
 cp ./config/line1.txt ./c1/
-cp ./client ./c2/
+cp ./client ./push_test ./c2/
 cp ./config/line2.txt ./c2/
-cp ./client ./c3/
+cp ./client ./push_test ./c3/
 cp ./config/line3.txt ./c3/
-cp ./client ./c4/
-cp ./client ./c5/
-cp ./client ./c6/
-cp ./client ./c7/
-cp ./client ./c8/
-cp ./client ./c9/
-cp ./client ./c10/
+cp ./client ./push_test ./c4/
+cp ./client ./push_test ./c5/
+cp ./client ./push_test ./c6/
+cp ./client ./push_test ./c7/
+cp ./client ./push_test ./c8/
+cp ./client ./push_test ./c9/
+cp ./client ./push_test ./c10/
 
 echo Moving run scripts into directories
 cd scripts

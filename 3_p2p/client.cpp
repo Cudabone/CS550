@@ -117,8 +117,9 @@ file_entry_dl *get_dl_file(const char *filename);
 file_entry *get_file(const char *filename);
 
 //testing
-void modify_file(const char *filename);
+void modify_files(const char *filename);
 void send_query(const char *filename);
+void push_test(bool random);
 
 //Query listing
 std::list<query *> qlist;
@@ -135,8 +136,8 @@ port_list plist;
 
 //Hostname and directories for each client
 std::string hostname; //Port number as identifier
-std::string usrdir = "User";
-std::string dldir = "Downloaded";
+std::string usrdir;
+std::string dldir;
 std::string cwdir; //Default working directory
 
 int done = 0;
@@ -177,7 +178,12 @@ int main(int argc, char **argv)
 	}
 	char cwdstr[MAXLINE];
 	if(getcwd(cwdstr,sizeof(cwdstr)) != NULL)
+	{
 		cwdir = std::string(cwdstr);
+		usrdir = cwdir+"/User/";
+		dldir = cwdir+"/Downloaded/";
+		//usrdir = cwdir
+	}
 	printf("Current working directory: %s\n", cwdir.c_str());
 	//create_directories();
 	print_port_list(plist);
@@ -769,7 +775,8 @@ bool have_query(uuid_t uuid)
 //Adds file to the user file list, not downloaded
 void add_file(char *filename)
 {
-	int fd = open(filename,O_RDONLY);
+	std::string file = usrdir+filename;
+	int fd = open(file.c_str(),O_RDONLY);
 	if(fd < 0)
 	{
 		printf("File does not exist, cannot add\n");
@@ -785,12 +792,6 @@ void add_file(char *filename)
 //Creates and adds a downloaded file entry to the file list
 void add_dl_file(const char *filename,in_port_t origin,time_t rtime,time_t mtime, int TTR)
 {
-	if(chdir(dldir.c_str()) < 0)
-	{
-		printf("Download directory missing, not adding it to the list\n");
-		return;
-	}
-	chdir(cwdir.c_str());
 	file_entry_dl *fe = new file_entry_dl;
 	fe->filename = std::string(filename);
 	fe->rtime = rtime;
@@ -930,22 +931,20 @@ void send_file(int cfd)
 
 		int err;
 		if(get_file(filename) != NULL)
-		{
-			err = chdir(usrdir.c_str());
 			dl_file = false;
-		}
 		else if(get_dl_file(filename) != NULL)
-		{
-			err = chdir(dldir.c_str());
 			dl_file = true;
-		}
 
-		int fd = open(filename,O_RDONLY); 
+		std::string file;
+		if(dl_file)
+			file = dldir+filename;
+		else file = usrdir+filename;
+
+		int fd = open(file.c_str(),O_RDONLY); 
 		if(fd < 0)
 		{
 			printf("File couldnt be opened\n");
 			close(cfd);
-			chdir(cwdir.c_str());
 			return;
 		}
 		struct stat filestat;
@@ -961,7 +960,6 @@ void send_file(int cfd)
 		{
 			printf("Error sending file\n");
 			close(cfd);
-			chdir(cwdir.c_str());
 			return;
 		}
 		char mtimestr[MTIMECHARS] = {"0"};
@@ -999,10 +997,11 @@ void modify_files(const char *filename)
 	int fd;
 	for(std::list<file_entry *>::iterator it = flist.begin(); it != flist.end(); it++)
 	{
+		std::string file = usrdir+(*it)->filename;
 		struct stat filestat;
 		time_t mtime;
 		struct utimbuf update_time;
-		fd = open((*it)->filename.c_str(),O_APPEND);
+		fd = open(file.c_str(),O_APPEND);
 		if(!(fd < 0))
 		{
 			fstat(fd,&filestat);	
@@ -1013,6 +1012,7 @@ void modify_files(const char *filename)
 			utime(filename,&update_time);
 		}
 	}
+	sleep(UPDATETIME);
 }
 /* Checks if any registered files from client were moved
  * or can no longer be opened. If so remove from central
@@ -1100,7 +1100,8 @@ void file_checker_push()
 		int fd;
 		for(std::list<file_entry *>::iterator it = flist.begin(); it != flist.end(); it++)
 		{
-			fd = open((const char *)(*it)->filename.c_str(),O_RDONLY);
+			std::string file = usrdir+(*it)->filename;
+			fd = open(file.c_str(),O_RDONLY);
 			if(fd < 0)
 			{
 				printf("File %s moved or deleted: Updating list\n",(*it)->filename.c_str());
@@ -1136,7 +1137,8 @@ void file_checker_pull()
 		int fd;
 		for(std::list<file_entry *>::iterator it = flist.begin(); it != flist.end(); it++)
 		{
-			fd = open((const char *)(*it)->filename.c_str(),O_RDONLY);
+			std::string file = usrdir+(*it)->filename;
+			fd = open(file.c_str(),O_RDONLY);
 			if(fd < 0)
 			{
 				printf("File %s moved or deleted: Updating list\n",(*it)->filename.c_str());
@@ -1411,7 +1413,7 @@ int usr_dl_prompt()
  */
 bool read_filename(char *filename, int flag)
 {
-	FILE *file;
+	int fd;
 	if(flag == 0)
 		printf("Enter the filename to register\n");
 	else 
@@ -1424,16 +1426,18 @@ bool read_filename(char *filename, int flag)
 	//If registering
 	if(flag == 0)
 	{
+		std::string file = usrdir+filename;
 		//Check to make sure we can open the file
-		file = fopen((const char *)filename,"r");
-		if(file == NULL)
+		printf("Attempting to open: %s\n",file.c_str());
+		fd = open(file.c_str(),O_RDONLY);
+		if(fd < 0)
 		{
 			printf("File does not exist, cancelling\n");
 			return false;
 		}
 		else
 		{
-			fclose(file);
+			close(fd);
 			return true;
 		}
 		//Close the file
@@ -1453,9 +1457,9 @@ void retrieve_file(int sfd, const char *filename, in_port_t port)
 	//File size and remaining bytes
 	int rem = atoi(filesize);
 	char buf[BUFFSIZE];
-	if(chdir(dldir.c_str()) < 0)
-		printf("Download directory missing, using default directory\n");
-	FILE *file = fopen(filename,"w");
+	std::string filestr = dldir+filename;
+	int fd = open(filestr.c_str(),O_WRONLY);
+	FILE *file = fdopen(fd,"w");
 	int recvb = 0;
 	int totalb = atoi(filesize);
 	//Write to a new file
@@ -1497,7 +1501,7 @@ void retrieve_file(int sfd, const char *filename, in_port_t port)
 	printf("File received\n");
 	//Display file if less than 1KB
 	fclose(file);
-	chdir(cwdir.c_str());
+	close(fd);
 	close(sfd);
 }
 /* Prompt the user as to whether they want to receive, 
@@ -1652,7 +1656,6 @@ void send_query(const char *filename)
 	//print_plist(recvports);
 	sfd = socket(AF_INET,SOCK_STREAM,0);
 	printf("Found %d total peers with file\n",numpeersint);
-	int input = 0;
 	if(numpeersint != 0)
 	{
 		strcpy(peerid,recvports.front().c_str());
@@ -1676,6 +1679,7 @@ void send_query(const char *filename)
 void push_test(bool random)
 {
 	int invalidations = 0;
+	int total = 0;
 	std::list<std::string> files;
 	files.push_back(std::string("1kb.txt"));
 	files.push_back(std::string("2kb.txt"));	
@@ -1687,21 +1691,29 @@ void push_test(bool random)
 	files.push_back(std::string("8kb.txt"));	
 	files.push_back(std::string("9kb.txt"));	
 	files.push_back(std::string("10kb.txt"));	
-	for(std::list<std::string>::const_iterator it = files.begin(); it != files.end(); it++)
+	for(int i = 0; i < 100; i++)
 	{
-		if(!file_check((*it).c_str()))
+		for(std::list<std::string>::const_iterator it = files.begin(); it != files.end(); it++)
 		{
-			invalidations++;
-			if(random == true)
+			total++;
+			//If you dont have the file, it was updated
+			if(!file_check((*it).c_str()))
 			{
-				if(rand() % 10 < 5)
+				invalidations++;
+				if(random == true)
+				{
+					if(rand() % 10 < 5)
+						send_query((*it).c_str());
+				}
+				else
+				{
 					send_query((*it).c_str());
-			}
-			else
-			{
-				send_query((*it).c_str());
+				}
 			}
 		}
 	}
+	float percentinvalid = (float)(invalidations/total);
 	printf("Number of invalidations: %d\n",invalidations);
+	printf("Percent invalid: %%%2f\n",percentinvalid);
+	printf("Percent valid: %%%2f\n",100-percentinvalid);
 }
