@@ -758,8 +758,11 @@ void remove_query(uuid_t uuid)
 //Frees the query listing
 void free_qlist()
 {
-	for(std::list<query *>::iterator it = qlist.begin(); it != qlist.end(); it++)
-		delete *it;
+	while(!qlist.empty())
+	{
+		delete qlist.front();
+		qlist.pop_front();
+	}
 }
 //Checks if a query is in the query list. True if so, false otherwise.
 bool have_query(uuid_t uuid)
