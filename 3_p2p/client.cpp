@@ -785,6 +785,7 @@ void add_file(char *filename)
 		printf("File does not exist, cannot add\n");
 		return;
 	}
+	close(fd);
 	struct stat filestat;
 	fstat(fd,&filestat);
 	file_entry *fe = new file_entry;
